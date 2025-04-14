@@ -1,6 +1,8 @@
 # GEMMul8
 
-GEMMul8 (GEMMulate): GEMM emulation using int8 matrix engines based on the Ozaki Scheme2.
+GEMMul8 (GEMMulate): GEMM emulation using int8 matrix engines based on the Ozaki Scheme2
+
+developed by Yuki Uchino (yuki.uchino.fe (at) riken.jp).
 
 ## Build
 
@@ -124,7 +126,21 @@ If you use these libraries, you must agree to the licenses terms of ozIMMU, Acce
 
 ## Citation
 
+```
+@misc{ozaki2025ozakischemeiigemmoriented,
+      title={Ozaki Scheme II: A GEMM-oriented emulation of floating-point matrix multiplication using an integer modular technique},
+      author={Katsuhisa Ozaki and Yuki Uchino and Toshiyuki Imamura},
+      year={2025},
+      eprint={2504.08009},
+      archivePrefix={arXiv},
+      primaryClass={cs.MS},
+      url={https://arxiv.org/abs/2504.08009},
+}
+
+and
+
 TBD
+```
 
 ## License
 
