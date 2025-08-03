@@ -16,17 +16,17 @@ template <> __forceinline__ __device__ double Tabs<double>(double in) { return f
 template <> __forceinline__ __device__ float Tabs<float>(float in) { return fabsf(in); };
 template <> __forceinline__ __device__ int32_t Tabs<int32_t>(int32_t in) { return abs(in); };
 
-template <typename T> __forceinline__ __device__ int __T2int_ru(T in);
-template <> __forceinline__ __device__ int __T2int_ru<double>(double in) { return __double2int_ru(in); };
-template <> __forceinline__ __device__ int __T2int_ru<float>(float in) { return __float2int_ru(in); };
+// template <typename T> __forceinline__ __device__ int __T2int_ru(T in);
+// template <> __forceinline__ __device__ int __T2int_ru<double>(double in) { return __double2int_ru(in); };
+// template <> __forceinline__ __device__ int __T2int_ru<float>(float in) { return __float2int_ru(in); };
 
-template <typename T> __forceinline__ __device__ T Tscalbn(T in, const int sft);
-template <> __forceinline__ __device__ double Tscalbn<double>(double in, const int sft) { return scalbn(in, sft); };
-template <> __forceinline__ __device__ float Tscalbn<float>(float in, const int sft) { return scalbnf(in, sft); };
+// template <typename T> __forceinline__ __device__ T Tscalbn(T in, const int sft);
+// template <> __forceinline__ __device__ double Tscalbn<double>(double in, const int sft) { return scalbn(in, sft); };
+// template <> __forceinline__ __device__ float Tscalbn<float>(float in, const int sft) { return scalbnf(in, sft); };
 
-template <typename T> __forceinline__ __device__ T Ttrunc(T in);
-template <> __forceinline__ __device__ double Ttrunc<double>(double in) { return trunc(in); };
-template <> __forceinline__ __device__ float Ttrunc<float>(float in) { return truncf(in); };
+// template <typename T> __forceinline__ __device__ T Ttrunc(T in);
+// template <> __forceinline__ __device__ double Ttrunc<double>(double in) { return trunc(in); };
+// template <> __forceinline__ __device__ float Ttrunc<float>(float in) { return truncf(in); };
 
 template <typename T> __forceinline__ __device__ int Tilogb(T in);
 template <> __forceinline__ __device__ int Tilogb<double>(double in) { return ilogb(in); };
@@ -40,6 +40,82 @@ template <> __forceinline__ __device__ int32_t Tzero<int32_t>() { return 0; };
 template <typename T> __forceinline__ __device__ T __Tfma_ru(T in1, T in2, T in3);
 template <> __forceinline__ __device__ double __Tfma_ru<double>(double in1, double in2, double in3) { return __fma_ru(in1, in2, in3); };
 template <> __forceinline__ __device__ float __Tfma_ru<float>(float in1, float in2, float in3) { return __fmaf_ru(in1, in2, in3); };
+
+//==========================
+// trunc(scalbn(in,sft))
+//==========================
+template <typename T> __forceinline__ __device__ T T2int_fp(T in, const int sft);
+template <> __forceinline__ __device__ double T2int_fp<double>(double in, const int sft) {
+    int64_t bits = __double_as_longlong(in);
+    int64_t sign = bits & 0x8000000000000000LL;
+    int exp_raw  = (int)((bits >> 52) & 0x7FF);
+    bits &= ((1ULL << 52) - 1);
+
+    int is_sub = (exp_raw == 0);
+    int lz     = 12 - __clzll(bits);
+    int e      = is_sub ? lz : exp_raw;
+    e += sft;
+
+    int64_t frac_full = is_sub ? (bits << (2 - lz)) ^ (1LL << 52) : bits;
+    int64_t mask      = -1LL << max(1075 - e, 0);
+
+    bits            = sign | int64_t(e) << 52 | (frac_full & mask);
+    int64_t out_exp = (e < 1023) ? sign : bits;
+    return __longlong_as_double(out_exp);
+}
+template <> __forceinline__ __device__ float T2int_fp<float>(float in, const int sft) {
+    int bits    = __float_as_int(in);
+    int sign    = bits & 0x80000000;
+    int exp_raw = (bits >> 23) & 0xFF;
+    bits &= (1 << 23) - 1;
+
+    int is_sub = (exp_raw == 0);
+    int lz     = 9 - __clz(bits);
+    int e      = is_sub ? lz : exp_raw;
+    e += sft;
+
+    int frac_full = is_sub ? (bits << (2 - lz)) ^ (1 << 23) : bits;
+    int mask      = -1 << max(150 - e, 0);
+
+    bits        = sign | (e << 23) | (frac_full & mask);
+    int out_exp = (e < 127) ? sign : bits;
+    return __int_as_float(out_exp);
+}
+
+//==========================
+// int8_t(ceil(scalbn(fabs(in),sft)))
+//==========================
+template <typename T> __forceinline__ __device__ int8_t T2int8i(T in, const int sft);
+template <> __forceinline__ __device__ int8_t T2int8i<double>(double in, const int sft) {
+    int64_t bits = __double_as_longlong(in);
+    int exp      = (int)((bits >> 52) & 0x7FF);
+    bits &= ((1ULL << 52) - 1);
+    int is_sub = (exp == 0);
+
+    int numzero      = (is_sub) ? (12 - __clzll(bits)) : 0;
+    int e            = (is_sub) ? numzero : exp;
+    exp              = 1075 - e - sft;
+    int64_t mantissa = (is_sub) ? (bits << (2 - numzero)) : (bits | (1LL << 52));
+
+    bits           = 1LL << exp;
+    int64_t result = (mantissa + bits - 1) >> exp;
+    return static_cast<int8_t>(result);
+}
+template <> __forceinline__ __device__ int8_t T2int8i<float>(float in, const int sft) {
+    int bits = __float_as_int(in);
+    int exp  = (int)((bits >> 23) & 0x7FF);
+    bits &= ((1U << 23) - 1);
+    int is_sub = (exp == 0);
+
+    int numzero  = (is_sub) ? (10 - __clz(bits)) : 0;
+    int e        = (is_sub) ? numzero : exp;
+    exp          = 150 - e - sft;
+    int mantissa = (is_sub) ? (bits << (2 - numzero)) : (bits | (1LL << 23));
+
+    bits = 1 << exp;
+    exp  = (mantissa + bits - 1) >> exp;
+    return static_cast<int8_t>(exp);
+}
 
 template <typename T> __forceinline__ __device__ void inner_warp_max(T &amax) {
     amax = max(amax, __shfl_down_sync(0xFFFFFFFFu, amax, 16)); // warp-level reduction
@@ -72,11 +148,12 @@ template <> __forceinline__ __device__ void inner_warp_sum<int32_t>(int32_t &sum
     sum += __shfl_down_sync(0xFFFFFFFFu, sum, 1);  // warp-level reduction
 }
 
+// return max(abs(ptr[0:inc:length-1]))
 template <typename T>
 __device__ T find_amax(const T *const ptr,    //
                        const unsigned length, //
                        const unsigned inc,    // leading dimension
-                       T *shm)                //
+                       T *shm)                // shared memory (workspace)
 {
     // max in thread
     T amax = Tzero<T>();
@@ -103,12 +180,13 @@ __device__ T find_amax(const T *const ptr,    //
     return shm[0];
 }
 
+// return max(abs(ptr[0:inc:length-1])) and sum_{i=0}^{length-1}(ptr[i]^2)
 template <typename T>
 __device__ T find_amax_and_nrm(const T *const ptr,    //
                                const unsigned length, //
                                const unsigned inc,    // leading dimension
-                               T *shm,                //
-                               T &vecnrm)             //
+                               T *shm,                // shared memory (workspace)
+                               T &vecnrm)             // 2-norm^2
 {
     T *shm1 = shm;
     T *shm2 = shm + 32;
@@ -152,20 +230,43 @@ __device__ T find_amax_and_nrm(const T *const ptr,    //
     return shm[0];
 }
 
-template <typename T> __device__ int8_t mod_8i(T a, unsigned j);
-template <> __device__ int8_t mod_8i<double>(double a, unsigned j) {
+// calculate mod: a - round(a/p(j))*p(j)
+template <typename T, int MODE> __device__ __forceinline__ int8_t mod_8i(T a, unsigned j);
+template <> __device__ __forceinline__ int8_t mod_8i<double, 1>(double a, unsigned j) {
     const auto val = oz2_table::moduli_dev[j];
-    float tmp      = __double2float_rn(fma(rint(a * val.y), val.x, a));
-    tmp            = __fmaf_rn(rintf(tmp * val.w), val.z, tmp);
-    tmp            = __fmaf_rn(rintf(tmp * val.w), val.z, tmp);
-    return static_cast<int8_t>(tmp);
+    double tmp1    = fma(rint(a * val.y), val.x, a);
+    return static_cast<int8_t>(tmp1);
 }
-template <> __device__ int8_t mod_8i<float>(float a, unsigned j) {
+template <> __device__ __forceinline__ int8_t mod_8i<float, 1>(float a, unsigned j) {
     const auto val = oz2_table::modulif_dev[j];
-    float tmp      = __fmaf_rn(rintf(a * val.y), val.x, a);
-    tmp            = __fmaf_rn(rintf(tmp * val.y), val.x, tmp);
-    tmp            = __fmaf_rn(rintf(tmp * val.y), val.x, tmp);
-    return static_cast<int8_t>(tmp);
+    float tmp1     = __fmaf_rn(rintf(a * val.y), val.x, a);
+    return static_cast<int8_t>(tmp1);
+}
+template <> __device__ __forceinline__ int8_t mod_8i<double, 2>(double a, unsigned j) {
+    const auto val = oz2_table::moduli_dev[j];
+    float tmp1     = __double2float_rn(fma(rint(a * val.y), val.x, a));
+    float tmp2     = __fmaf_rn(rintf(tmp1 * val.w), val.z, tmp1);
+    return static_cast<int8_t>(tmp2);
+}
+template <> __device__ __forceinline__ int8_t mod_8i<float, 2>(float a, unsigned j) {
+    const auto val = oz2_table::modulif_dev[j];
+    float tmp1     = __fmaf_rn(rintf(a * val.y), val.x, a);
+    float tmp2     = __fmaf_rn(rintf(tmp1 * val.y), val.x, tmp1);
+    return static_cast<int8_t>(tmp2);
+}
+template <> __device__ __forceinline__ int8_t mod_8i<double, 3>(double a, unsigned j) {
+    const auto val = oz2_table::moduli_dev[j];
+    float tmp1     = __double2float_rn(fma(rint(a * val.y), val.x, a));
+    float tmp2     = __fmaf_rn(rintf(tmp1 * val.w), val.z, tmp1);
+    float tmp3     = __fmaf_rn(rintf(tmp2 * val.w), val.z, tmp2);
+    return static_cast<int8_t>(tmp3);
+}
+template <> __device__ __forceinline__ int8_t mod_8i<float, 3>(float a, unsigned j) {
+    const auto val = oz2_table::modulif_dev[j];
+    float tmp1     = __fmaf_rn(rintf(a * val.y), val.x, a);
+    float tmp2     = __fmaf_rn(rintf(tmp1 * val.y), val.x, tmp1);
+    float tmp3     = __fmaf_rn(rintf(tmp2 * val.y), val.x, tmp2);
+    return static_cast<int8_t>(tmp3);
 }
 
 } // namespace
@@ -176,6 +277,7 @@ __forceinline__ __device__ int compute_sft(int amax, int16_t sftA, const float l
     return sftA + __float2int_rd(__fmaf_rd(-0.51F, __log2f(__int2float_rn(amax)), log2M));
 }
 
+// extract first 7-bit of A^T
 template <typename T>
 __global__ void extract_A8i_kernel(const size_t k,                   // size(A,2)
                                    const T *const __restrict__ A,    // input (lda * k)
@@ -201,10 +303,14 @@ __global__ void extract_A8i_kernel(const size_t k,                   // size(A,2
         char4 out4;
         unsigned idx = i << 2;
 
-        out4.x = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx * lda]), sft));
-        out4.y = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 1) * lda]), sft));
-        out4.z = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 2) * lda]), sft));
-        out4.w = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 3) * lda]), sft));
+        // out4.x = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx * lda]), sft));
+        // out4.y = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 1) * lda]), sft));
+        // out4.z = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 2) * lda]), sft));
+        // out4.w = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 3) * lda]), sft));
+        out4.x = T2int8i<T>(in[idx * lda], sft);
+        out4.y = T2int8i<T>(in[(idx + 1) * lda], sft);
+        out4.z = T2int8i<T>(in[(idx + 2) * lda], sft);
+        out4.w = T2int8i<T>(in[(idx + 3) * lda], sft);
 
         *reinterpret_cast<char4 *>(out + idx) = out4;
     }
@@ -213,15 +319,20 @@ __global__ void extract_A8i_kernel(const size_t k,                   // size(A,2
         char4 out4;
         unsigned idx = i << 2;
 
-        out4.x = (idx < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx * lda]), sft)) : 0;
-        out4.y = (idx + 1 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 1) * lda]), sft)) : 0;
-        out4.z = (idx + 2 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 2) * lda]), sft)) : 0;
-        out4.w = (idx + 3 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 3) * lda]), sft)) : 0;
+        // out4.x = (idx < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx * lda]), sft)) : 0;
+        // out4.y = (idx + 1 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 1) * lda]), sft)) : 0;
+        // out4.z = (idx + 2 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 2) * lda]), sft)) : 0;
+        // out4.w = (idx + 3 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 3) * lda]), sft)) : 0;
+        out4.x = (idx < k) ? T2int8i<T>(in[idx * lda], sft) : 0;
+        out4.y = (idx + 1 < k) ? T2int8i<T>(in[(idx + 1) * lda], sft) : 0;
+        out4.z = (idx + 2 < k) ? T2int8i<T>(in[(idx + 2) * lda], sft) : 0;
+        out4.w = (idx + 3 < k) ? T2int8i<T>(in[(idx + 3) * lda], sft) : 0;
 
         *reinterpret_cast<char4 *>(out + idx) = out4;
     }
 }
 
+// extract first 7-bit of B
 template <typename T>
 __global__ void extract_B8i_kernel(const size_t k,                   // size(B,1)
                                    const T *const __restrict__ B,    // input (ldb * n)
@@ -248,10 +359,14 @@ __global__ void extract_B8i_kernel(const size_t k,                   // size(B,1
         unsigned idx = i << 2;
 
         Vec4<T> in4 = *reinterpret_cast<const Vec4<T> *>(in + idx);
-        out4.x      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.x), sft));
-        out4.y      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.y), sft));
-        out4.z      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.z), sft));
-        out4.w      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.w), sft));
+        // out4.x      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.x), sft));
+        // out4.y      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.y), sft));
+        // out4.z      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.z), sft));
+        // out4.w      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.w), sft));
+        out4.x = T2int8i<T>(in4.x, sft);
+        out4.y = T2int8i<T>(in4.y, sft);
+        out4.z = T2int8i<T>(in4.z, sft);
+        out4.w = T2int8i<T>(in4.w, sft);
 
         *reinterpret_cast<char4 *>(out + idx) = out4;
     }
@@ -260,16 +375,21 @@ __global__ void extract_B8i_kernel(const size_t k,                   // size(B,1
         char4 out4;
         unsigned idx = i << 2;
 
-        out4.x = (idx < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx]), sft)) : 0;
-        out4.y = (idx + 1 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx + 1]), sft)) : 0;
-        out4.z = (idx + 2 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx + 2]), sft)) : 0;
-        out4.w = (idx + 3 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx + 3]), sft)) : 0;
+        // out4.x = (idx < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx]), sft)) : 0;
+        // out4.y = (idx + 1 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx + 1]), sft)) : 0;
+        // out4.z = (idx + 2 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx + 2]), sft)) : 0;
+        // out4.w = (idx + 3 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx + 3]), sft)) : 0;
+        out4.x = (idx < k) ? T2int8i<T>(in[idx], sft) : 0;
+        out4.y = (idx < k) ? T2int8i<T>(in[idx + 1], sft) : 0;
+        out4.z = (idx < k) ? T2int8i<T>(in[idx + 2], sft) : 0;
+        out4.w = (idx < k) ? T2int8i<T>(in[idx + 3], sft) : 0;
 
         *reinterpret_cast<char4 *>(out + idx) = out4;
     }
 }
 
-template <typename T>
+// convert trunc(diag(2^sftA)*A)^T to A8i
+template <typename T, int MODE>
 __global__ void scalingA_kernel(const size_t n,                         // size(C,2)
                                 const size_t k,                         // size(A,2)
                                 const size_t incA8i,                    // lda8i * m
@@ -298,18 +418,22 @@ __global__ void scalingA_kernel(const size_t n,                         // size(
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        in4.x = Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft));
-        in4.y = Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft));
-        in4.z = Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft));
-        in4.w = Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft));
+        // in4.x = Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft));
+        // in4.y = Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft));
+        // in4.z = Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft));
+        // in4.w = Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft));
+        in4.x = T2int_fp<T>(in[idx * lda], sft);
+        in4.y = T2int_fp<T>(in[(idx + 1) * lda], sft);
+        in4.z = T2int_fp<T>(in[(idx + 2) * lda], sft);
+        in4.w = T2int_fp<T>(in[(idx + 3) * lda], sft);
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
 
-            out4.x = mod_8i<T>(in4.x, j);
-            out4.y = mod_8i<T>(in4.y, j);
-            out4.z = mod_8i<T>(in4.z, j);
-            out4.w = mod_8i<T>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, j);
+            out4.y = mod_8i<T, MODE>(in4.y, j);
+            out4.z = mod_8i<T, MODE>(in4.z, j);
+            out4.w = mod_8i<T, MODE>(in4.w, j);
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
@@ -319,18 +443,22 @@ __global__ void scalingA_kernel(const size_t n,                         // size(
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft)) : 0;
-        in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft)) : 0;
-        in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft)) : 0;
-        in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft)) : 0;
+        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft)) : 0;
+        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft)) : 0;
+        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft)) : 0;
+        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft)) : 0;
+        in4.x = (idx < k) ? T2int_fp<T>(in[idx * lda], sft) : 0;
+        in4.y = (idx + 1 < k) ? T2int_fp<T>(in[(idx + 1) * lda], sft) : 0;
+        in4.z = (idx + 2 < k) ? T2int_fp<T>(in[(idx + 2) * lda], sft) : 0;
+        in4.w = (idx + 3 < k) ? T2int_fp<T>(in[(idx + 3) * lda], sft) : 0;
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
 
-            out4.x = (idx < k) ? mod_8i<T>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
@@ -341,7 +469,8 @@ __global__ void scalingA_kernel(const size_t n,                         // size(
     }
 }
 
-template <typename T>
+// convert trunc(B*diag(2^sftB)) to B8i
+template <typename T, int MODE>
 __global__ void scalingB_kernel(const size_t m,                         // size(C,1)
                                 const size_t k,                         // size(B,1)
                                 const size_t incB8i,                    // ldb8i * n
@@ -370,18 +499,22 @@ __global__ void scalingB_kernel(const size_t m,                         // size(
         unsigned idx = i << 2;
 
         Vec4<T> in4 = *reinterpret_cast<const Vec4<T> *>(in + idx);
-        in4.x       = Ttrunc<T>(Tscalbn<T>(in4.x, sft));
-        in4.y       = Ttrunc<T>(Tscalbn<T>(in4.y, sft));
-        in4.z       = Ttrunc<T>(Tscalbn<T>(in4.z, sft));
-        in4.w       = Ttrunc<T>(Tscalbn<T>(in4.w, sft));
+        // in4.x       = Ttrunc<T>(Tscalbn<T>(in4.x, sft));
+        // in4.y       = Ttrunc<T>(Tscalbn<T>(in4.y, sft));
+        // in4.z       = Ttrunc<T>(Tscalbn<T>(in4.z, sft));
+        // in4.w       = Ttrunc<T>(Tscalbn<T>(in4.w, sft));
+        in4.x = T2int_fp<T>(in4.x, sft);
+        in4.y = T2int_fp<T>(in4.y, sft);
+        in4.z = T2int_fp<T>(in4.z, sft);
+        in4.w = T2int_fp<T>(in4.w, sft);
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
 
-            out4.x = mod_8i<T>(in4.x, j);
-            out4.y = mod_8i<T>(in4.y, j);
-            out4.z = mod_8i<T>(in4.z, j);
-            out4.w = mod_8i<T>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, j);
+            out4.y = mod_8i<T, MODE>(in4.y, j);
+            out4.z = mod_8i<T, MODE>(in4.z, j);
+            out4.w = mod_8i<T, MODE>(in4.w, j);
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
@@ -391,18 +524,22 @@ __global__ void scalingB_kernel(const size_t m,                         // size(
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx], sft)) : 0;
-        in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 1], sft)) : 0;
-        in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 2], sft)) : 0;
-        in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 3], sft)) : 0;
+        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx], sft)) : 0;
+        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 1], sft)) : 0;
+        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 2], sft)) : 0;
+        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 3], sft)) : 0;
+        in4.x = (idx < k) ? T2int_fp<T>(in[idx], sft) : 0;
+        in4.y = (idx + 1 < k) ? T2int_fp<T>(in[idx + 1], sft) : 0;
+        in4.z = (idx + 2 < k) ? T2int_fp<T>(in[idx + 2], sft) : 0;
+        in4.w = (idx + 3 < k) ? T2int_fp<T>(in[idx + 3], sft) : 0;
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
 
-            out4.x = (idx < k) ? mod_8i<T>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
@@ -413,25 +550,189 @@ __global__ void scalingB_kernel(const size_t m,                         // size(
     }
 }
 
+// convert trunc(A^T*diag(2^sftA))^T to A8i
+template <typename T, int MODE>
+__global__ void scalingAT_kernel(const size_t n,                         // size(C,2)
+                                 const size_t k,                         // size(AT,1)
+                                 const size_t incA8i,                    // lda8i * n
+                                 const unsigned num_moduli,              // #moduli
+                                 const T *const __restrict__ A,          // input (lda * n)
+                                 const size_t lda,                       // leading dimension
+                                 const int32_t *const __restrict__ C32i, // input (ldc32i * n)
+                                 const size_t ldc32i,                    // leading dimension
+                                 int8_t *const __restrict__ A8i,         // output (lda8i * n)
+                                 const size_t lda8i,                     // leading dimension
+                                 int16_t *const __restrict__ sftA,       // exponent of shift values
+                                 const float log2M)                      // log2(M-1)/2 - 0.5
+{
+    __shared__ int32_t smem[32];
+    const auto col_idx = blockIdx.x;
+    const int sftAi    = sftA[col_idx];
+    const int32_t amax = find_amax<int32_t>(C32i + col_idx, n, ldc32i, smem);
+    const int sft      = compute_sft(amax, sftAi, log2M);
+
+    const T *const __restrict__ in = A + col_idx * lda;
+    int8_t *const __restrict__ out = A8i + col_idx * lda8i;
+
+    unsigned kmax = k >> 2;
+    unsigned i    = threadIdx.x;
+    for (; i < kmax; i += blockDim.x) {
+        unsigned idx = i << 2;
+
+        Vec4<T> in4 = *reinterpret_cast<const Vec4<T> *>(in + idx);
+        // in4.x       = Ttrunc<T>(Tscalbn<T>(in4.x, sft));
+        // in4.y       = Ttrunc<T>(Tscalbn<T>(in4.y, sft));
+        // in4.z       = Ttrunc<T>(Tscalbn<T>(in4.z, sft));
+        // in4.w       = Ttrunc<T>(Tscalbn<T>(in4.w, sft));
+        in4.x = T2int_fp<T>(in4.x, sft);
+        in4.y = T2int_fp<T>(in4.y, sft);
+        in4.z = T2int_fp<T>(in4.z, sft);
+        in4.w = T2int_fp<T>(in4.w, sft);
+
+        char4 out4;
+        for (unsigned j = 0; j < num_moduli; ++j) {
+
+            out4.x = mod_8i<T, MODE>(in4.x, j);
+            out4.y = mod_8i<T, MODE>(in4.y, j);
+            out4.z = mod_8i<T, MODE>(in4.z, j);
+            out4.w = mod_8i<T, MODE>(in4.w, j);
+
+            *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
+        }
+    }
+    kmax = lda8i >> 2;
+    for (; i < kmax; i += blockDim.x) {
+        unsigned idx = i << 2;
+
+        Vec4<T> in4;
+        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx], sft)) : 0;
+        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 1], sft)) : 0;
+        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 2], sft)) : 0;
+        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 3], sft)) : 0;
+        in4.x = (idx < k) ? T2int_fp<T>(in[idx], sft) : 0;
+        in4.y = (idx + 1 < k) ? T2int_fp<T>(in[idx + 1], sft) : 0;
+        in4.z = (idx + 2 < k) ? T2int_fp<T>(in[idx + 2], sft) : 0;
+        in4.w = (idx + 3 < k) ? T2int_fp<T>(in[idx + 3], sft) : 0;
+
+        char4 out4;
+        for (unsigned j = 0; j < num_moduli; ++j) {
+
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
+
+            *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
+        }
+    }
+
+    if (threadIdx.x == 0) {
+        sftA[col_idx] = -sft;
+    }
+}
+
+// convert trunc(diag(2^sftB)*B^T) to B8i
+template <typename T, int MODE>
+__global__ void scalingBT_kernel(const size_t m,                         // size(C,1)
+                                 const size_t k,                         // size(B,2)
+                                 const size_t incB8i,                    // ldb8i * m
+                                 const unsigned num_moduli,              // #moduli
+                                 const T *const __restrict__ B,          // input (ldb * m)
+                                 const size_t ldb,                       // leading dimension
+                                 const int32_t *const __restrict__ C32i, // input (ldc32i * n)
+                                 const size_t ldc32i,                    // leading dimension
+                                 int8_t *const __restrict__ B8i,         // output (ldb8i * m)
+                                 const size_t ldb8i,                     // leading dimension
+                                 int16_t *const __restrict__ sftB,       // exponent of shift values
+                                 const float log2M)                      // log2(M-1)/2 - 0.5
+{
+    __shared__ int32_t smem[32];
+    const auto row_idx = blockIdx.x;
+    const int sftBi    = sftB[row_idx];
+    const int32_t amax = find_amax<int32_t>(C32i + row_idx * ldc32i, m, 1u, smem);
+    const int sft      = compute_sft(amax, sftBi, log2M);
+
+    const T *const __restrict__ in = B + row_idx;
+    int8_t *const __restrict__ out = B8i + row_idx * ldb8i;
+
+    unsigned kmax = k >> 2;
+    unsigned i    = threadIdx.x;
+    for (; i < kmax; i += blockDim.x) {
+        unsigned idx = i << 2;
+
+        Vec4<T> in4;
+        // in4.x = Ttrunc<T>(Tscalbn<T>(in[idx * ldb], sft));
+        // in4.y = Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * ldb], sft));
+        // in4.z = Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * ldb], sft));
+        // in4.w = Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * ldb], sft));
+        in4.x = T2int_fp<T>(in[idx * ldb], sft);
+        in4.y = T2int_fp<T>(in[(idx + 1) * ldb], sft);
+        in4.z = T2int_fp<T>(in[(idx + 2) * ldb], sft);
+        in4.w = T2int_fp<T>(in[(idx + 3) * ldb], sft);
+
+        char4 out4;
+        for (unsigned j = 0; j < num_moduli; ++j) {
+
+            out4.x = mod_8i<T, MODE>(in4.x, j);
+            out4.y = mod_8i<T, MODE>(in4.y, j);
+            out4.z = mod_8i<T, MODE>(in4.z, j);
+            out4.w = mod_8i<T, MODE>(in4.w, j);
+
+            *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
+        }
+    }
+    kmax = ldb8i >> 2;
+    for (; i < kmax; i += blockDim.x) {
+        unsigned idx = i << 2;
+
+        Vec4<T> in4;
+        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx * ldb], sft)) : 0;
+        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * ldb], sft)) : 0;
+        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * ldb], sft)) : 0;
+        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * ldb], sft)) : 0;
+        in4.x = (idx < k) ? T2int_fp<T>(in[idx * ldb], sft) : 0;
+        in4.y = (idx + 1 < k) ? T2int_fp<T>(in[(idx + 1) * ldb], sft) : 0;
+        in4.z = (idx + 2 < k) ? T2int_fp<T>(in[(idx + 2) * ldb], sft) : 0;
+        in4.w = (idx + 3 < k) ? T2int_fp<T>(in[(idx + 3) * ldb], sft) : 0;
+
+        char4 out4;
+        for (unsigned j = 0; j < num_moduli; ++j) {
+
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
+
+            *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
+        }
+    }
+
+    if (threadIdx.x == 0) {
+        sftB[row_idx] = -sft;
+    }
+}
+
 template <typename T>
-__inline__ void scaling(cublasHandle_t handle,        // handle
+__inline__ void scaling(cublasHandle_t handle,        // Handle to the cuBLAS library context
                         const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
                         const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
-                        const size_t m,               // size(A,1) & size(C,1)
-                        const size_t n,               // size(B,2) & size(C,2)
-                        const size_t k,               // size(A,2) & size(B,1)
+                        const size_t m,               // Number of rows of C
+                        const size_t n,               // Number of columns of C
+                        const size_t k,               // Inner dimension
                         const unsigned num_moduli,    // #moduli
                         const T *const A,             // input
                         const size_t lda,             // leading dimension
                         const T *const B,             // input
                         const size_t ldb,             // leading dimension
-                        int8_t *const A8i,            // output (k * m)
+                        int8_t *const A8i,            // output (lda8i * m)
                         const size_t lda8i,           // leading dimension
+                        const size_t incA8i,          // increment between the A8i
                         int16_t *const sftA,          // exponent of shift values for rows of A
-                        int8_t *const B8i,            // output (k * n)
+                        int8_t *const B8i,            // output (ldb8i * n)
                         const size_t ldb8i,           // leading dimension
+                        const size_t incB8i,          // increment between the B8i
                         int16_t *const sftB,          // exponent of shift values for cols of B
-                        int32_t *const C32i,          // tmp (m * n)
+                        int32_t *const C32i,          // tmp (m_pad * n)
                         const unsigned table_idx)     //
 {
     // extract first 7-bit from A and B
@@ -449,21 +750,85 @@ __inline__ void scaling(cublasHandle_t handle,        // handle
     // C32i := A8i^T*B8i
     constexpr int32_t alpha = 1;
     constexpr int32_t beta  = 0;
+    const size_t m_pad      = ((m + 3) >> 2) << 2;
     cudaDeviceSynchronize();
-    cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, m, n, lda8i, &alpha, A8i, CUDA_R_8I, lda8i, B8i, CUDA_R_8I, ldb8i, &beta, C32i, CUDA_R_32I, m, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+    cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, m_pad, n, lda8i, &alpha, A8i, CUDA_R_8I, lda8i, B8i, CUDA_R_8I, ldb8i, &beta, C32i, CUDA_R_32I, m_pad, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
 
     // extract high order bits from A and B
     cudaDeviceSynchronize();
     const float log2M = oz2_table::int8tc::log2M[table_idx]; // fld(log2(M-1)/2 - 0.5)
-    if (op_A == CUBLAS_OP_N) {
-        scalingA_kernel<T><<<m, oz2_const::threads_scaling>>>(n, k, lda8i * m, num_moduli, A, lda, C32i, m, A8i, lda8i, sftA, log2M);
-    } else {
-        scalingB_kernel<T><<<m, oz2_const::threads_scaling>>>(m, k, lda8i * m, num_moduli, A, lda, C32i, m, A8i, lda8i, sftA, log2M);
-    }
-    if (op_B == CUBLAS_OP_N) {
-        scalingB_kernel<T><<<n, oz2_const::threads_scaling>>>(m, k, ldb8i * n, num_moduli, B, ldb, C32i, m, B8i, ldb8i, sftB, log2M);
-    } else {
-        scalingA_kernel<T><<<n, oz2_const::threads_scaling>>>(n, k, ldb8i * n, num_moduli, B, ldb, C32i, m, B8i, ldb8i, sftB, log2M);
+    if constexpr (std::is_same_v<T, double>) {
+        if (num_moduli <= 13) {
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingAT_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingBT_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            }
+        } else if (num_moduli <= 19) {
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingAT_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingBT_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            }
+        } else {
+            // num_moduli <= 26
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingAT_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 3><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingBT_kernel<T, 3><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            }
+        }
+    } else if constexpr (std::is_same_v<T, float>) {
+        if (num_moduli <= 5) {
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingAT_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingBT_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            }
+        } else if (num_moduli <= 11) {
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingAT_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingBT_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            }
+        } else {
+            // num_moduli <= 18
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingAT_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 3><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingBT_kernel<T, 3><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
+            }
+        }
     }
 }
 
@@ -476,13 +841,15 @@ template <> __forceinline__ __device__ int compute_sft<double>(double amax, doub
     const int exponent  = ilogb(vecnrm);
     const float vecnrmf = __double2float_ru(scalbn(vecnrm, -exponent));
     const int k         = __float2int_rd(__fmaf_rd(-0.51F, __fadd_ru(__log2f(vecnrmf), exponent), log2M));
-    return k - ilogb(amax);
+    return min(__float2int_rd(log2M - 1.0f), k) - ilogb(amax);
 }
 template <> __forceinline__ __device__ int compute_sft<float>(float amax, float vecnrm, const float log2M) {
-    return __float2int_rd(__fmaf_rd(-0.51F, __log2f(vecnrm), log2M)) - ilogbf(amax);
+    const int k = __float2int_rd(__fmaf_rd(-0.51F, __log2f(vecnrm), log2M));
+    return min(__float2int_rd(log2M - 1.0f), k) - ilogbf(amax);
 }
 
-template <typename T>
+// convert trunc(diag(2^sftA)*A)^T to A8i
+template <typename T, int MODE>
 __global__ void scalingA_kernel(const size_t k,                   // size(A,2)
                                 const size_t incA8i,              // lda8i * m
                                 const unsigned num_moduli,        // #moduli
@@ -511,18 +878,22 @@ __global__ void scalingA_kernel(const size_t k,                   // size(A,2)
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        in4.x = Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft));
-        in4.y = Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft));
-        in4.z = Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft));
-        in4.w = Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft));
+        // in4.x = Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft));
+        // in4.y = Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft));
+        // in4.z = Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft));
+        // in4.w = Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft));
+        in4.x = T2int_fp<T>(in[idx * lda], sft);
+        in4.y = T2int_fp<T>(in[(idx + 1) * lda], sft);
+        in4.z = T2int_fp<T>(in[(idx + 2) * lda], sft);
+        in4.w = T2int_fp<T>(in[(idx + 3) * lda], sft);
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
 
-            out4.x = mod_8i<T>(in4.x, j);
-            out4.y = mod_8i<T>(in4.y, j);
-            out4.z = mod_8i<T>(in4.z, j);
-            out4.w = mod_8i<T>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, j);
+            out4.y = mod_8i<T, MODE>(in4.y, j);
+            out4.z = mod_8i<T, MODE>(in4.z, j);
+            out4.w = mod_8i<T, MODE>(in4.w, j);
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
@@ -532,25 +903,30 @@ __global__ void scalingA_kernel(const size_t k,                   // size(A,2)
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft)) : 0;
-        in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft)) : 0;
-        in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft)) : 0;
-        in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft)) : 0;
+        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft)) : 0;
+        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft)) : 0;
+        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft)) : 0;
+        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft)) : 0;
+        in4.x = (idx < k) ? T2int_fp<T>(in[idx * lda], sft) : 0;
+        in4.y = (idx + 1 < k) ? T2int_fp<T>(in[(idx + 1) * lda], sft) : 0;
+        in4.z = (idx + 2 < k) ? T2int_fp<T>(in[(idx + 2) * lda], sft) : 0;
+        in4.w = (idx + 3 < k) ? T2int_fp<T>(in[(idx + 3) * lda], sft) : 0;
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
 
-            out4.x = (idx < k) ? mod_8i<T>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
     }
 }
 
-template <typename T>
+// convert trunc(B*diag(2^sftB)) to B8i
+template <typename T, int MODE>
 __global__ void scalingB_kernel(const size_t k,                   // size(B,1)
                                 const size_t incB8i,              // ldb8i * n
                                 const unsigned num_moduli,        // #moduli
@@ -579,18 +955,22 @@ __global__ void scalingB_kernel(const size_t k,                   // size(B,1)
         unsigned idx = i << 2;
 
         Vec4<T> in4 = *reinterpret_cast<const Vec4<T> *>(in + idx);
-        in4.x       = Ttrunc<T>(Tscalbn<T>(in4.x, sft));
-        in4.y       = Ttrunc<T>(Tscalbn<T>(in4.y, sft));
-        in4.z       = Ttrunc<T>(Tscalbn<T>(in4.z, sft));
-        in4.w       = Ttrunc<T>(Tscalbn<T>(in4.w, sft));
+        // in4.x       = Ttrunc<T>(Tscalbn<T>(in4.x, sft));
+        // in4.y       = Ttrunc<T>(Tscalbn<T>(in4.y, sft));
+        // in4.z       = Ttrunc<T>(Tscalbn<T>(in4.z, sft));
+        // in4.w       = Ttrunc<T>(Tscalbn<T>(in4.w, sft));
+        in4.x = T2int_fp<T>(in4.x, sft);
+        in4.y = T2int_fp<T>(in4.y, sft);
+        in4.z = T2int_fp<T>(in4.z, sft);
+        in4.w = T2int_fp<T>(in4.w, sft);
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
 
-            out4.x = mod_8i<T>(in4.x, j);
-            out4.y = mod_8i<T>(in4.y, j);
-            out4.z = mod_8i<T>(in4.z, j);
-            out4.w = mod_8i<T>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, j);
+            out4.y = mod_8i<T, MODE>(in4.y, j);
+            out4.z = mod_8i<T, MODE>(in4.z, j);
+            out4.w = mod_8i<T, MODE>(in4.w, j);
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
@@ -600,18 +980,22 @@ __global__ void scalingB_kernel(const size_t k,                   // size(B,1)
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx], sft)) : 0;
-        in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 1], sft)) : 0;
-        in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 2], sft)) : 0;
-        in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 3], sft)) : 0;
+        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx], sft)) : 0;
+        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 1], sft)) : 0;
+        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 2], sft)) : 0;
+        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 3], sft)) : 0;
+        in4.x = (idx < k) ? T2int_fp<T>(in[idx], sft) : 0;
+        in4.y = (idx + 1 < k) ? T2int_fp<T>(in[idx + 1], sft) : 0;
+        in4.z = (idx + 2 < k) ? T2int_fp<T>(in[idx + 2], sft) : 0;
+        in4.w = (idx + 3 < k) ? T2int_fp<T>(in[idx + 3], sft) : 0;
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
 
-            out4.x = (idx < k) ? mod_8i<T>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
@@ -621,32 +1005,97 @@ __global__ void scalingB_kernel(const size_t k,                   // size(B,1)
 template <typename T>
 __inline__ void scaling(const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
                         const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
-                        const size_t m,               // size(A,1) & size(C,1)
-                        const size_t n,               // size(B,2) & size(C,2)
-                        const size_t k,               // size(A,2) & size(B,1)
+                        const size_t m,               // Number of rows of C
+                        const size_t n,               // Number of columns of C
+                        const size_t k,               // Inner dimension
                         const unsigned num_moduli,    // #moduli
                         const T *const A,             // input
                         const size_t lda,             // leading dimension
                         const T *const B,             // input
                         const size_t ldb,             // leading dimension
-                        int8_t *const A8i,            // output (k * m)
+                        int8_t *const A8i,            // output (lda8i * m)
                         const size_t lda8i,           // leading dimension
+                        const size_t incA8i,          // increment between the A8i
                         int16_t *const sftA,          // exponent of shift values for rows of A
-                        int8_t *const B8i,            // output (k * n)
+                        int8_t *const B8i,            // output (ldb8i * n)
                         const size_t ldb8i,           // leading dimension
+                        const size_t incB8i,          // increment between the B8i
                         int16_t *const sftB,          // exponent of shift values for cols of B
                         const unsigned table_idx)     //
 {
     const float log2M = oz2_table::vecnorm::log2M[table_idx]; // fld(log2(M-1)/2 - 1.5)
-    if (op_A == CUBLAS_OP_N) {
-        scalingA_kernel<T><<<m, oz2_const::threads_scaling>>>(k, lda8i * m, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
-    } else {
-        scalingB_kernel<T><<<m, oz2_const::threads_scaling>>>(k, lda8i * m, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
-    }
-    if (op_B == CUBLAS_OP_N) {
-        scalingB_kernel<T><<<n, oz2_const::threads_scaling>>>(k, ldb8i * n, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
-    } else {
-        scalingA_kernel<T><<<n, oz2_const::threads_scaling>>>(k, ldb8i * n, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+
+    if constexpr (std::is_same_v<T, double>) {
+        if (num_moduli <= 13) {
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingB_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingA_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            }
+        } else if (num_moduli <= 19) {
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingB_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingA_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            }
+        } else {
+            // num_moduli <= 26
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingB_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 3><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingA_kernel<T, 3><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            }
+        }
+    } else if constexpr (std::is_same_v<T, float>) {
+        if (num_moduli <= 5) {
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingB_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingA_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            }
+        } else if (num_moduli <= 11) {
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingB_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingA_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            }
+        } else { // num_moduli <= 18
+            if (op_A == CUBLAS_OP_N) {
+                scalingA_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            } else {
+                scalingB_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
+            }
+            if (op_B == CUBLAS_OP_N) {
+                scalingB_kernel<T, 3><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            } else {
+                scalingA_kernel<T, 3><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
+            }
+        }
     }
 }
 

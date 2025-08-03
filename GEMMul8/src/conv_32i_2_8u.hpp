@@ -13,19 +13,18 @@ __global__ void conv_32i_2_8u_256_kernel(const size_t sizeC,                    
 
     int4 in = reinterpret_cast<const int4 *>(C32i)[idx];
 
-    uchar4 out;
-    out.x = static_cast<unsigned char>(in.x);
-    out.y = static_cast<unsigned char>(in.y);
-    out.z = static_cast<unsigned char>(in.z);
-    out.w = static_cast<unsigned char>(in.w);
+    uchar4 out{static_cast<unsigned char>(in.x),
+               static_cast<unsigned char>(in.y),
+               static_cast<unsigned char>(in.z),
+               static_cast<unsigned char>(in.w)};
 
     reinterpret_cast<uchar4 *>(C8u)[idx] = out;
 }
 
 __global__ void conv_32i_2_8u_not256_kernel(const size_t sizeC,                     // ((m * n + 15) >> 4) << 4; // multiple of 16
                                             const int32_t *const __restrict__ C32i, // input
-                                            const uint8_t modulus,                  //
-                                            const int32_t invm,                     // 2^32 / modulus
+                                            const uint8_t modulus,                  // <= 256
+                                            const int32_t invm,                     // 2^32 / modulus - 1
                                             uint8_t *const __restrict__ C8u)        // output
 {
     const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -33,24 +32,38 @@ __global__ void conv_32i_2_8u_not256_kernel(const size_t sizeC,                 
 
     int4 in = reinterpret_cast<const int4 *>(C32i)[idx];
 
-    in.x -= __mulhi(in.x, invm) * modulus;
-    in.x -= (in.x >= modulus) * modulus;
-    in.x += (in.x < 0) * modulus;
-    in.y -= __mulhi(in.y, invm) * modulus;
-    in.y -= (in.y >= modulus) * modulus;
-    in.y += (in.y < 0) * modulus;
-    in.z -= __mulhi(in.z, invm) * modulus;
-    in.z -= (in.z >= modulus) * modulus;
-    in.z += (in.z < 0) * modulus;
-    in.w -= __mulhi(in.w, invm) * modulus;
-    in.w -= (in.w >= modulus) * modulus;
-    in.w += (in.w < 0) * modulus;
+    // in.x -= __mulhi(in.x, invm) * modulus;
+    // in.x -= (in.x >= modulus) * modulus;
+    // in.x += (in.x < 0) * modulus;
+    // in.y -= __mulhi(in.y, invm) * modulus;
+    // in.y -= (in.y >= modulus) * modulus;
+    // in.y += (in.y < 0) * modulus;
+    // in.z -= __mulhi(in.z, invm) * modulus;
+    // in.z -= (in.z >= modulus) * modulus;
+    // in.z += (in.z < 0) * modulus;
+    // in.w -= __mulhi(in.w, invm) * modulus;
+    // in.w -= (in.w >= modulus) * modulus;
+    // in.w += (in.w < 0) * modulus;
 
-    uchar4 out;
-    out.x = static_cast<unsigned char>(in.x);
-    out.y = static_cast<unsigned char>(in.y);
-    out.z = static_cast<unsigned char>(in.z);
-    out.w = static_cast<unsigned char>(in.w);
+    const int32_t q0 = __mulhi(in.x, invm);
+    const int32_t q1 = __mulhi(in.y, invm);
+    const int32_t q2 = __mulhi(in.z, invm);
+    const int32_t q3 = __mulhi(in.w, invm);
+
+    in.x -= q0 * modulus;
+    in.y -= q1 * modulus;
+    in.z -= q2 * modulus;
+    in.w -= q3 * modulus;
+
+    in.x += (in.x >= modulus) ? -modulus : ((in.x < 0) ? modulus : 0);
+    in.y += (in.y >= modulus) ? -modulus : ((in.y < 0) ? modulus : 0);
+    in.z += (in.z >= modulus) ? -modulus : ((in.z < 0) ? modulus : 0);
+    in.w += (in.w >= modulus) ? -modulus : ((in.w < 0) ? modulus : 0);
+
+    uchar4 out{static_cast<unsigned char>(in.x),
+               static_cast<unsigned char>(in.y),
+               static_cast<unsigned char>(in.z),
+               static_cast<unsigned char>(in.w)};
 
     reinterpret_cast<uchar4 *>(C8u)[idx] = out;
 }

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cublas_api.h>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <fstream>
@@ -18,11 +19,20 @@
 #include <string>
 #include <vector>
 
-#define AVERAGE    100
-#define SEED       123456
-#define PHI        0.0, 0.5, 1, 1.5
-#define SIZE       1024, 2048, 4096, 8192, 16384
+#define AVERAGE 100
+#define SEED    123456
+#define PHI     0.0, 0.5, 1, 1.5
+// #define NUM_MODULI 6, 7, 8
 #define NUM_MODULI 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+#if defined(GPU_MEM_MB) && GPU_MEM_MB >= 21000
+    #define SIZE 1024, 2048, 4096, 8192, 16384
+#else
+    #define SIZE 1024, 2048, 4096, 8192, 12288
+#endif
+
+#if CUBLAS_VER_MAJOR > 12 || (CUBLAS_VER_MAJOR == 12 && CUBLAS_VER_MINOR >= 9)
+    #define CUBLAS_VERSION_129
+#endif
 
 #if defined(cuMpSGEMM_FLAG)
     #include "cumpsgemm/cumpsgemm.hpp"
@@ -73,8 +83,8 @@ std::string getDeviceName() {
     return deviceName;
 }
 
-std::string getCurrentDateTime() {
-    auto now             = std::chrono::system_clock::now();
+std::string getCurrentDateTime(std::chrono::system_clock::time_point &now) {
+    now                  = std::chrono::system_clock::now();
     std::time_t now_time = std::chrono::system_clock::to_time_t(now);
 
     std::stringstream ss;
@@ -85,8 +95,13 @@ std::string getCurrentDateTime() {
 void accuracy_check(std::string &deviceName, std::string &dateTime) {
     std::string fileName = "oz2_results_f_accuracy_" + deviceName + "_" + dateTime + ".csv";
     std::ofstream outFile(fileName);
+    outFile << std::scientific;
+    std::cout << std::scientific;
     cublasHandle_t handle;
     cublasCreate(&handle);
+
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
 
     //--------------------
     // settings
@@ -166,8 +181,8 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             outFile << phi << ",SGEMM (k=" + std::to_string(k) + "),";
             std::cout << phi << ",SGEMM (k=" + std::to_string(k) + "),";
             for (int i = 0; i < num_moduli_list.size(); ++i) {
-                outFile << std::scientific << errmax << ",";
-                std::cout << std::scientific << errmax << ",";
+                outFile << errmax << ",";
+                std::cout << errmax << ",";
             }
             outFile << std::endl;
             std::cout << std::endl;
@@ -185,11 +200,60 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             outFile << phi << ",SGEMM-TF32 (k=" + std::to_string(k) + "),";
             std::cout << phi << ",SGEMM-TF32 (k=" + std::to_string(k) + "),";
             for (int i = 0; i < num_moduli_list.size(); ++i) {
-                outFile << std::scientific << errmax << ",";
-                std::cout << std::scientific << errmax << ",";
+                outFile << errmax << ",";
+                std::cout << errmax << ",";
             }
             outFile << std::endl;
             std::cout << std::endl;
+
+            //--------------------
+            // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
+            //--------------------
+#if defined(CUBLAS_VERSION_129)
+            if (prop.major * 10 + prop.minor >= 100) {
+                cudaDeviceSynchronize();
+                cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_EMULATED_16BFX9, CUBLAS_GEMM_DEFAULT);
+                cudaDeviceSynchronize();
+                cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaDeviceSynchronize();
+                eval::err::gemm_err(m, n, cpuCf, cpuCd, errmax, errmed);
+
+                outFile << phi << ",SGEMM-BF16X9 (k=" + std::to_string(k) + "),";
+                std::cout << phi << ",SGEMM-BF16X9 (k=" + std::to_string(k) + "),";
+                for (int i = 0; i < num_moduli_list.size(); ++i) {
+                    outFile << errmax << ",";
+                    std::cout << errmax << ",";
+                }
+                outFile << std::endl;
+                std::cout << std::endl;
+            }
+#endif
+
+            //--------------------
+            // C := A*B by cuMpSGEMM
+            //--------------------
+#if defined(cuMpSGEMM_FLAG)
+            cumpsgemm::handle_t cuMpSGEMM_handle;
+            cumpsgemm::create(cuMpSGEMM_handle);
+
+            cudaDeviceSynchronize();
+            gemm_FP16TCEC_SCALING(cuMpSGEMM_handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alphaf, devAf, m, devBf, k, betaf, devCf, m);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuCf, cpuCd, errmax, errmed);
+
+            outFile << phi << ",FP16TCEC_SCALING (k=" + std::to_string(k) + "),";
+            std::cout << phi << ",FP16TCEC_SCALING (k=" + std::to_string(k) + "),";
+            for (int i = 0; i < num_moduli_list.size(); ++i) {
+                outFile << errmax << ",";
+                std::cout << errmax << ",";
+            }
+            outFile << std::endl;
+            std::cout << std::endl;
+
+            cumpsgemm::destroy(cuMpSGEMM_handle);
+#endif
 
             //--------------------
             // C := A*B by ozaki-scheme2
@@ -204,8 +268,8 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                 cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
                 cudaDeviceSynchronize();
                 eval::err::gemm_err(m, n, cpuCf, cpuCd, errmax, errmed);
-                outFile << std::scientific << errmax << ",";
-                std::cout << std::scientific << errmax << ",";
+                outFile << errmax << ",";
+                std::cout << errmax << ",";
             }
             outFile << std::endl;
             std::cout << std::endl;
@@ -223,8 +287,8 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                 cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
                 cudaDeviceSynchronize();
                 eval::err::gemm_err(m, n, cpuCf, cpuCd, errmax, errmed);
-                outFile << std::scientific << errmax << ",";
-                std::cout << std::scientific << errmax << ",";
+                outFile << errmax << ",";
+                std::cout << errmax << ",";
             }
             outFile << std::endl;
             std::cout << std::endl;
@@ -242,6 +306,9 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
 void time_check(std::string &deviceName, std::string &dateTime) {
     std::string fileName = "oz2_results_f_time_" + deviceName + "_" + dateTime + ".csv";
     std::ofstream outFile(fileName);
+    outFile << std::scientific;
+    std::cout << std::scientific;
+
     outFile << "phi,m,n,k,"
             << "function,"
             << "relerr_max,relerr_med,"
@@ -264,6 +331,9 @@ void time_check(std::string &deviceName, std::string &dateTime) {
               << std::endl;
     cublasHandle_t handle;
     cublasCreate(&handle);
+
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
 
     //--------------------
     // settings
@@ -353,10 +423,10 @@ void time_check(std::string &deviceName, std::string &dateTime) {
         time = time / itermax * 1.e-9;
 
         outFile << phi << "," << m << "," << n << "," << k << "," << "INT8-GEMM" << ",";
-        outFile << std::scientific << "," << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+        outFile << "," << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                 << "," << "," << "," << "," << std::endl;
         std::cout << phi << "," << m << "," << n << "," << k << "," << "INT8-GEMM" << ",";
-        std::cout << std::scientific << "," << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+        std::cout << "," << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                   << "," << "," << "," << "," << std::endl;
 
         //--------------------
@@ -383,10 +453,10 @@ void time_check(std::string &deviceName, std::string &dateTime) {
         time = time / itermax * 1.e-9;
 
         outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM" << ",";
-        outFile << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+        outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                 << "," << "," << "," << "," << std::endl;
         std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM" << ",";
-        std::cout << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+        std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                   << "," << "," << "," << "," << std::endl;
 
         //--------------------
@@ -411,12 +481,47 @@ void time_check(std::string &deviceName, std::string &dateTime) {
         time = time / itermax * 1.e-9;
 
         outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
-        outFile << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+        outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                 << "," << "," << "," << "," << std::endl;
         std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
-        std::cout << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+        std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                   << "," << "," << "," << "," << std::endl;
 
+        //--------------------
+        // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
+        //--------------------
+#if defined(CUBLAS_VERSION_129)
+        if (prop.major * 10 + prop.minor >= 100) {
+            cudaDeviceSynchronize();
+            cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_EMULATED_16BFX9, CUBLAS_GEMM_DEFAULT);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+            time = 0.0;
+            for (int iter = 0; iter < itermax; ++iter) {
+                cudaDeviceSynchronize();
+                start = std::chrono::system_clock::now();
+                cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_EMULATED_16BFX9, CUBLAS_GEMM_DEFAULT);
+                cudaDeviceSynchronize();
+                stop = std::chrono::system_clock::now();
+                time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+            }
+            time = time / itermax * 1.e-9;
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM-BF16X9" << ",";
+            outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                    << "," << "," << "," << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-BF16X9" << ",";
+            std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                      << "," << "," << "," << "," << std::endl;
+        }
+#endif
+
+        //--------------------
+        // C := A*B by cuMpSGEMM
+        //--------------------
 #if defined(cuMpSGEMM_FLAG)
         cumpsgemm::handle_t cuMpSGEMM_handle;
         cumpsgemm::create(cuMpSGEMM_handle);
@@ -440,10 +545,10 @@ void time_check(std::string &deviceName, std::string &dateTime) {
         time = time / itermax * 1.e-9;
 
         outFile << phi << "," << m << "," << n << "," << k << "," << "FP16TCEC_SCALING" << ",";
-        outFile << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+        outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                 << "," << "," << "," << "," << std::endl;
         std::cout << phi << "," << m << "," << n << "," << k << "," << "FP16TCEC_SCALING" << ",";
-        std::cout << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+        std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                   << "," << "," << "," << "," << std::endl;
 
         cumpsgemm::destroy(cuMpSGEMM_handle);
@@ -477,10 +582,10 @@ void time_check(std::string &deviceName, std::string &dateTime) {
             for (int j = 0; j < 4; ++j) times[j] = times[j] / itermax * 1.e-9;
 
             outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
-            outFile << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+            outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                     << times[0] << "," << times[1] << "," << times[2] << "," << times[3] << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
-            std::cout << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+            std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                       << times[0] << "," << times[1] << "," << times[2] << "," << times[3] << "," << std::endl;
         }
 
@@ -512,10 +617,10 @@ void time_check(std::string &deviceName, std::string &dateTime) {
             for (int j = 0; j < 4; ++j) times[j] = times[j] / itermax * 1.e-9;
 
             outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
-            outFile << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+            outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                     << times[0] << "," << times[1] << "," << times[2] << "," << times[3] << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
-            std::cout << std::scientific << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+            std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                       << times[0] << "," << times[1] << "," << times[2] << "," << times[3] << "," << std::endl;
         }
     }
@@ -531,6 +636,8 @@ void time_check(std::string &deviceName, std::string &dateTime) {
 void watt_check(std::string &deviceName, std::string &dateTime) {
     std::string fileName = "oz2_results_f_watt_" + deviceName + "_" + dateTime + ".csv";
     std::ofstream outFile(fileName);
+    outFile << std::scientific;
+    std::cout << std::scientific;
     outFile << "phi,m,n,k,"
             << "function,"
             << "relerr_max,relerr_med,"
@@ -545,6 +652,9 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
               << std::endl;
     cublasHandle_t handle;
     cublasCreate(&handle);
+
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
 
     //--------------------
     // settings
@@ -563,7 +673,7 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
     float *workf_cpu            = new float[n_max * n_max];
     size_t worksize             = gemmul8::workSize(n_max, n_max, n_max, num_moduli_max);
     void *work_gpu;
-    cudaMalloc(&work_gpu, n_max * n_max * 3 * (sizeof(double) + sizeof(float)));
+    cudaMalloc(&work_gpu, n_max * n_max * 3 * sizeof(float));
     cudaDeviceSynchronize();
     void *work_gemm;
     cudaMalloc(&work_gemm, worksize);
@@ -643,9 +753,9 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
             k);
 
         outFile << phi << "," << m << "," << n << "," << k << "," << "INT8-GEMM" << ",";
-        outFile << std::scientific << "," << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        outFile << "," << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
         std::cout << phi << "," << m << "," << n << "," << k << "," << "INT8-GEMM" << ",";
-        std::cout << std::scientific << "," << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        std::cout << "," << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
 
         //--------------------
         // C := A*B by FP32
@@ -683,9 +793,9 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
         eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
 
         outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM" << ",";
-        outFile << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
         std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM" << ",";
-        std::cout << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
 
         //--------------------
         // C := A*B by FP32 with CUBLAS_COMPUTE_32F_FAST_TF32
@@ -721,10 +831,55 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
         eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
 
         outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
-        outFile << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
         std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
-        std::cout << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
 
+        //--------------------
+        // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
+        //--------------------
+#if defined(CUBLAS_VERSION_129)
+        if (prop.major * 10 + prop.minor >= 100) {
+            res = getWatt::getWatt(
+                [&]() {
+                    cublasGemmEx(handle,
+                                 CUBLAS_OP_N,
+                                 CUBLAS_OP_N,
+                                 m,
+                                 n,
+                                 k,
+                                 &alphaf,
+                                 devAf,
+                                 CUDA_R_32F,
+                                 m,
+                                 devBf,
+                                 CUDA_R_32F,
+                                 k,
+                                 &betaf,
+                                 devCf,
+                                 CUDA_R_32F,
+                                 m,
+                                 CUBLAS_COMPUTE_32F_EMULATED_16BFX9,
+                                 CUBLAS_GEMM_DEFAULT);
+                },
+                m,
+                n,
+                k);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM-BF16X9" << ",";
+            outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-BF16X9" << ",";
+            std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        }
+#endif
+
+        //--------------------
+        // C := A*B by cuMpSGEMM
+        //--------------------
 #if defined(cuMpSGEMM_FLAG)
         cumpsgemm::handle_t cuMpSGEMM_handle;
         cumpsgemm::create(cuMpSGEMM_handle);
@@ -744,9 +899,9 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
         eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
 
         outFile << phi << "," << m << "," << n << "," << k << "," << "FP16TCEC_SCALING" << ",";
-        outFile << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
         std::cout << phi << "," << m << "," << n << "," << k << "," << "FP16TCEC_SCALING" << ",";
-        std::cout << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
 
         cumpsgemm::destroy(cuMpSGEMM_handle);
 #endif
@@ -771,9 +926,9 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
             eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
 
             outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
-            outFile << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
-            std::cout << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
         }
 
         //--------------------
@@ -796,9 +951,675 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
             eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
 
             outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
-            outFile << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
-            std::cout << std::scientific << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+        }
+    }
+
+    delete[] workd_cpu;
+    delete[] workf_cpu;
+    cudaFree(work_gpu);
+    cudaFree(work_gemm);
+    cublasDestroy(handle);
+    outFile.close();
+}
+
+void time_check_rect(std::string &deviceName, std::string &dateTime) {
+    std::string fileName = "oz2_results_f_time-rect_" + deviceName + "_" + dateTime + ".csv";
+    std::ofstream outFile(fileName);
+    outFile << std::scientific;
+    std::cout << std::scientific;
+
+    outFile << "phi,m,n,k,"
+            << "function,"
+            << "relerr_max,relerr_med,"
+            << "TFLOPS,"
+            << "total_time [sec],"
+            << "conv_32f_2_8i,"
+            << "cublasGemmEx,"
+            << "conv_32i_2_8u,"
+            << "inverse_scaling,"
+            << std::endl;
+    std::cout << "phi,m,n,k,"
+              << "function,"
+              << "relerr_max,relerr_med,"
+              << "TFLOPS,"
+              << "total_time [sec],"
+              << "conv_32f_2_8i,"
+              << "cublasGemmEx,"
+              << "conv_32i_2_8u,"
+              << "inverse_scaling,"
+              << std::endl;
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+
+    //--------------------
+    // settings
+    //--------------------
+    unsigned long long seed = SEED;
+    const float phi         = 0.5;
+    std::vector<size_t> n_list{SIZE};
+    std::vector<unsigned> num_moduli_list{NUM_MODULI};
+    const int itermax = AVERAGE;
+
+    //--------------------
+    // workspace
+    //--------------------
+    const size_t n_max          = *max_element(begin(n_list), end(n_list));
+    const size_t num_moduli_max = *max_element(begin(num_moduli_list), end(num_moduli_list));
+    double *workd_cpu           = new double[n_max * n_max];
+    float *workf_cpu            = new float[n_max * n_max];
+    size_t worksize             = gemmul8::workSize(n_max, n_max, n_max, num_moduli_max);
+    void *work_gpu;
+    cudaMalloc(&work_gpu, n_max * n_max * 3 * sizeof(float));
+    cudaDeviceSynchronize();
+    void *work_gemm;
+    cudaMalloc(&work_gemm, worksize);
+    cudaDeviceSynchronize();
+
+    for (auto &n : n_list) {
+        size_t m = n;
+
+        for (auto &k : n_list) {
+            double *cpuCd      = workd_cpu;
+            float *cpuCf       = workf_cpu;
+            float *devAf       = reinterpret_cast<float *>(work_gpu);
+            float *devBf       = devAf + m * k;
+            float *devCf       = devBf + k * n;
+            const size_t lda8i = ((k + 15) >> 4) << 4;
+            const size_t ldb8i = lda8i;
+            int8_t *A8i        = reinterpret_cast<int8_t *>(work_gemm);
+            int8_t *B8i        = A8i + lda8i * m;
+            int32_t *C32i      = reinterpret_cast<int32_t *>(B8i + ldb8i * n);
+            double maxerr = 0.0, mederr = 0.0;
+            double time = 0.0;
+            std::chrono::system_clock::time_point start, stop;
+
+            //--------------------
+            // generate matrices
+            //--------------------
+            makemat::randmat<float>(m, k, devAf, phi, seed);
+            makemat::randmat<float>(k, n, devBf, phi, seed);
+
+            //--------------------
+            // C1+C2 := A*B by FP64
+            //--------------------
+            void *workd_gpu;
+            cudaMalloc(&workd_gpu, (m * k + k * n + m * n) * sizeof(double));
+            double *devAd = reinterpret_cast<double *>(workd_gpu);
+            double *devBd = devAd + m * k;
+            double *devCd = devBd + k * n;
+            makemat::f2d(m, k, devAf, devAd);
+            makemat::f2d(k, n, devBf, devBd);
+
+            double alpha = 1.0;
+            double beta  = 0.0;
+            cudaDeviceSynchronize();
+            cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, devAd, CUDA_R_64F, m, devBd, CUDA_R_64F, k, &beta, devCd, CUDA_R_64F, m, CUBLAS_COMPUTE_64F, CUBLAS_GEMM_DEFAULT);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCd, devCd, m * n * sizeof(double), cudaMemcpyDeviceToHost);
+
+            cudaFree(workd_gpu);
+
+            //--------------------
+            // C := A*B (int8-TC)
+            //--------------------
+            makemat::ones(lda8i * m + ldb8i * n, A8i);
+            int32_t ialpha = 1;
+            int32_t ibeta  = 0;
+            cudaDeviceSynchronize();
+            cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, m, n, lda8i, &ialpha, A8i, CUDA_R_8I, lda8i, B8i, CUDA_R_8I, ldb8i, &ibeta, C32i, CUDA_R_32I, m, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+            cudaDeviceSynchronize();
+            time = 0.0;
+            for (int iter = 0; iter < itermax; ++iter) {
+                cudaDeviceSynchronize();
+                start = std::chrono::system_clock::now();
+                cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, m, n, lda8i, &ialpha, A8i, CUDA_R_8I, lda8i, B8i, CUDA_R_8I, ldb8i, &ibeta, C32i, CUDA_R_32I, m, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+                cudaDeviceSynchronize();
+                stop = std::chrono::system_clock::now();
+                time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+            }
+            time = time / itermax * 1.e-9;
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "INT8-GEMM" << ",";
+            outFile << "," << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                    << "," << "," << "," << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "INT8-GEMM" << ",";
+            std::cout << "," << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                      << "," << "," << "," << "," << std::endl;
+
+            //--------------------
+            // C := A*B by FP32
+            //--------------------
+            float alphaf = 1.0f;
+            float betaf  = 0.0f;
+            cudaDeviceSynchronize();
+            cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+            time = 0.0;
+            for (int iter = 0; iter < itermax; ++iter) {
+                cudaDeviceSynchronize();
+                start = std::chrono::system_clock::now();
+                cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT);
+                cudaDeviceSynchronize();
+                stop = std::chrono::system_clock::now();
+                time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+            }
+            time = time / itermax * 1.e-9;
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM" << ",";
+            outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                    << "," << "," << "," << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM" << ",";
+            std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                      << "," << "," << "," << "," << std::endl;
+
+            //--------------------
+            // C := A*B by FP32 with CUBLAS_COMPUTE_32F_FAST_TF32
+            //--------------------
+            cudaDeviceSynchronize();
+            cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+            time = 0.0;
+            for (int iter = 0; iter < itermax; ++iter) {
+                cudaDeviceSynchronize();
+                start = std::chrono::system_clock::now();
+                cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
+                cudaDeviceSynchronize();
+                stop = std::chrono::system_clock::now();
+                time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+            }
+            time = time / itermax * 1.e-9;
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
+            outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                    << "," << "," << "," << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
+            std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                      << "," << "," << "," << "," << std::endl;
+
+            //--------------------
+            // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
+            //--------------------
+#if defined(CUBLAS_VERSION_129)
+            if (prop.major * 10 + prop.minor >= 100) {
+                cudaDeviceSynchronize();
+                cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_EMULATED_16BFX9, CUBLAS_GEMM_DEFAULT);
+                cudaDeviceSynchronize();
+                cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaDeviceSynchronize();
+                eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+                time = 0.0;
+                for (int iter = 0; iter < itermax; ++iter) {
+                    cudaDeviceSynchronize();
+                    start = std::chrono::system_clock::now();
+                    cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_EMULATED_16BFX9, CUBLAS_GEMM_DEFAULT);
+                    cudaDeviceSynchronize();
+                    stop = std::chrono::system_clock::now();
+                    time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+                }
+                time = time / itermax * 1.e-9;
+
+                outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM-BF16X9" << ",";
+                outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                        << "," << "," << "," << "," << std::endl;
+                std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-BF16X9" << ",";
+                std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                          << "," << "," << "," << "," << std::endl;
+            }
+#endif
+
+            //--------------------
+            // C := A*B by cuMpSGEMM
+            //--------------------
+#if defined(cuMpSGEMM_FLAG)
+            cumpsgemm::handle_t cuMpSGEMM_handle;
+            cumpsgemm::create(cuMpSGEMM_handle);
+            cudaDeviceSynchronize();
+
+            gemm_FP16TCEC_SCALING(cuMpSGEMM_handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alphaf, devAf, m, devBf, k, betaf, devCf, m);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+            time = 0.0;
+            for (int iter = 0; iter < itermax; ++iter) {
+                cudaDeviceSynchronize();
+                start = std::chrono::system_clock::now();
+                gemm_FP16TCEC_SCALING(cuMpSGEMM_handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alphaf, devAf, m, devBf, k, betaf, devCf, m);
+                cudaDeviceSynchronize();
+                stop = std::chrono::system_clock::now();
+                time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+            }
+            time = time / itermax * 1.e-9;
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "FP16TCEC_SCALING" << ",";
+            outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                    << "," << "," << "," << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "FP16TCEC_SCALING" << ",";
+            std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                      << "," << "," << "," << "," << std::endl;
+
+            cumpsgemm::destroy(cuMpSGEMM_handle);
+#endif
+
+            //--------------------
+            // C := A*B by ozaki-scheme2
+            //--------------------
+            for (auto &num_moduli : num_moduli_list) {
+                std::vector<double> times(4, 0);
+                std::vector<double> timestmp(4, 0);
+
+                cudaDeviceSynchronize();
+                timestmp = gemmul8::gemm<float>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, m, devBf, k, &betaf, devCf, m, num_moduli, true, work_gemm);
+                cudaDeviceSynchronize();
+                cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaDeviceSynchronize();
+                eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+                time = 0.0;
+                for (int iter = 0; iter < itermax; ++iter) {
+                    cudaDeviceSynchronize();
+                    start    = std::chrono::system_clock::now();
+                    timestmp = gemmul8::gemm<float>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, m, devBf, k, &betaf, devCf, m, num_moduli, true, work_gemm);
+                    cudaDeviceSynchronize();
+                    stop = std::chrono::system_clock::now();
+                    time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+                    for (int j = 0; j < 4; ++j) times[j] += timestmp[j];
+                }
+                time = time / itermax * 1.e-9;
+                for (int j = 0; j < 4; ++j) times[j] = times[j] / itermax * 1.e-9;
+
+                outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
+                outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                        << times[0] << "," << times[1] << "," << times[2] << "," << times[3] << "," << std::endl;
+                std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
+                std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                          << times[0] << "," << times[1] << "," << times[2] << "," << times[3] << "," << std::endl;
+            }
+
+            //--------------------
+            // C := A*B by ozaki-scheme2
+            //--------------------
+            for (auto &num_moduli : num_moduli_list) {
+                std::vector<double> times(4, 0);
+                std::vector<double> timestmp(4);
+
+                cudaDeviceSynchronize();
+                timestmp = gemmul8::gemm<float>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, m, devBf, k, &betaf, devCf, m, num_moduli, false, work_gemm);
+                cudaDeviceSynchronize();
+                cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaDeviceSynchronize();
+                eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+                time = 0.0;
+                for (int iter = 0; iter < itermax; ++iter) {
+                    cudaDeviceSynchronize();
+                    start    = std::chrono::system_clock::now();
+                    timestmp = gemmul8::gemm<float>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, m, devBf, k, &betaf, devCf, m, num_moduli, false, work_gemm);
+                    cudaDeviceSynchronize();
+                    stop = std::chrono::system_clock::now();
+                    time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+                    for (int j = 0; j < 4; ++j) times[j] += timestmp[j];
+                }
+                time = time / itermax * 1.e-9;
+                for (int j = 0; j < 4; ++j) times[j] = times[j] / itermax * 1.e-9;
+
+                outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
+                outFile << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                        << times[0] << "," << times[1] << "," << times[2] << "," << times[3] << "," << std::endl;
+                std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
+                std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                          << times[0] << "," << times[1] << "," << times[2] << "," << times[3] << "," << std::endl;
+            }
+        }
+    }
+
+    delete[] workd_cpu;
+    delete[] workf_cpu;
+    cudaFree(work_gpu);
+    cudaFree(work_gemm);
+    cublasDestroy(handle);
+    outFile.close();
+}
+
+void watt_check_rect(std::string &deviceName, std::string &dateTime) {
+    std::string fileName = "oz2_results_f_watt-rect_" + deviceName + "_" + dateTime + ".csv";
+    std::ofstream outFile(fileName);
+    outFile << std::scientific;
+    std::cout << std::scientific;
+    outFile << "phi,m,n,k,"
+            << "function,"
+            << "relerr_max,relerr_med,"
+            << "watt,"
+            << "GFLOPS/watt,"
+            << std::endl;
+    std::cout << "phi,m,n,k,"
+              << "function,"
+              << "relerr_max,relerr_med,"
+              << "watt,"
+              << "GFLOPS/watt,"
+              << std::endl;
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, 0);
+
+    //--------------------
+    // settings
+    //--------------------
+    unsigned long long seed = SEED;
+    const float phi         = 0.5;
+    std::vector<size_t> n_list{SIZE};
+    std::vector<unsigned> num_moduli_list{NUM_MODULI};
+
+    //--------------------
+    // workspace
+    //--------------------
+    const size_t n_max          = *max_element(begin(n_list), end(n_list));
+    const size_t num_moduli_max = *max_element(begin(num_moduli_list), end(num_moduli_list));
+    double *workd_cpu           = new double[n_max * n_max];
+    float *workf_cpu            = new float[n_max * n_max];
+    size_t worksize             = gemmul8::workSize(n_max, n_max, n_max, num_moduli_max);
+    void *work_gpu;
+    cudaMalloc(&work_gpu, n_max * n_max * 3 * sizeof(float));
+    cudaDeviceSynchronize();
+    void *work_gemm;
+    cudaMalloc(&work_gemm, worksize);
+    cudaDeviceSynchronize();
+
+    for (auto &n : n_list) {
+        size_t m = n;
+
+        for (auto &k : n_list) {
+            double *cpuCd      = workd_cpu;
+            float *cpuCf       = workf_cpu;
+            float *devAf       = reinterpret_cast<float *>(work_gpu);
+            float *devBf       = devAf + m * k;
+            float *devCf       = devBf + k * n;
+            const size_t lda8i = ((k + 15) >> 4) << 4;
+            const size_t ldb8i = lda8i;
+            int8_t *A8i        = reinterpret_cast<int8_t *>(work_gemm);
+            int8_t *B8i        = A8i + lda8i * m;
+            int32_t *C32i      = reinterpret_cast<int32_t *>(B8i + ldb8i * n);
+            double maxerr = 0.0, mederr = 0.0;
+
+            //--------------------
+            // generate matrices
+            //--------------------
+            makemat::randmat<float>(m, k, devAf, phi, seed);
+            makemat::randmat<float>(k, n, devBf, phi, seed);
+
+            //--------------------
+            // C1+C2 := A*B by FP64
+            //--------------------
+            void *workd_gpu;
+            cudaMalloc(&workd_gpu, (m * k + k * n + m * n) * sizeof(double));
+            double *devAd = reinterpret_cast<double *>(workd_gpu);
+            double *devBd = devAd + m * k;
+            double *devCd = devBd + k * n;
+            makemat::f2d(m, k, devAf, devAd);
+            makemat::f2d(k, n, devBf, devBd);
+
+            double alpha = 1.0;
+            double beta  = 0.0;
+            cudaDeviceSynchronize();
+            cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, devAd, CUDA_R_64F, m, devBd, CUDA_R_64F, k, &beta, devCd, CUDA_R_64F, m, CUBLAS_COMPUTE_64F, CUBLAS_GEMM_DEFAULT);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCd, devCd, m * n * sizeof(double), cudaMemcpyDeviceToHost);
+
+            cudaFree(workd_gpu);
+
+            //--------------------
+            // C := A*B (int8-TC)
+            //--------------------
+            makemat::ones(lda8i * m + ldb8i * n, A8i);
+            int32_t ialpha          = 1;
+            int32_t ibeta           = 0;
+            std::vector<double> res = getWatt::getWatt(
+                [&]() {
+                    cublasGemmEx(handle,
+                                 CUBLAS_OP_T,
+                                 CUBLAS_OP_N,
+                                 m,
+                                 n,
+                                 lda8i,
+                                 &ialpha,
+                                 A8i,
+                                 CUDA_R_8I,
+                                 lda8i,
+                                 B8i,
+                                 CUDA_R_8I,
+                                 ldb8i,
+                                 &ibeta,
+                                 C32i,
+                                 CUDA_R_32I,
+                                 m,
+                                 CUBLAS_COMPUTE_32I,
+                                 CUBLAS_GEMM_DEFAULT);
+                },
+                m,
+                n,
+                k);
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "INT8-GEMM" << ",";
+            outFile << "," << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "INT8-GEMM" << ",";
+            std::cout << "," << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+
+            //--------------------
+            // C := A*B by FP32
+            //--------------------
+            float alphaf = 1.0f;
+            float betaf  = 0.0f;
+            res          = getWatt::getWatt(
+                [&]() {
+                    cublasGemmEx(handle,
+                                 CUBLAS_OP_N,
+                                 CUBLAS_OP_N,
+                                 m,
+                                 n,
+                                 k,
+                                 &alphaf,
+                                 devAf,
+                                 CUDA_R_32F,
+                                 m,
+                                 devBf,
+                                 CUDA_R_32F,
+                                 k,
+                                 &betaf,
+                                 devCf,
+                                 CUDA_R_32F,
+                                 m,
+                                 CUBLAS_COMPUTE_32F,
+                                 CUBLAS_GEMM_DEFAULT);
+                },
+                m,
+                n,
+                k);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM" << ",";
+            outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM" << ",";
+            std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+
+            //--------------------
+            // C := A*B by FP32 with CUBLAS_COMPUTE_32F_FAST_TF32
+            //--------------------
+            res = getWatt::getWatt(
+                [&]() {
+                    cublasGemmEx(handle,
+                                 CUBLAS_OP_N,
+                                 CUBLAS_OP_N,
+                                 m,
+                                 n,
+                                 k,
+                                 &alphaf,
+                                 devAf,
+                                 CUDA_R_32F,
+                                 m,
+                                 devBf,
+                                 CUDA_R_32F,
+                                 k,
+                                 &betaf,
+                                 devCf,
+                                 CUDA_R_32F,
+                                 m,
+                                 CUBLAS_COMPUTE_32F_FAST_TF32,
+                                 CUBLAS_GEMM_DEFAULT);
+                },
+                m,
+                n,
+                k);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
+            outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
+            std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+
+            //--------------------
+            // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
+            //--------------------
+#if defined(CUBLAS_VERSION_129)
+            if (prop.major * 10 + prop.minor >= 100) {
+                res = getWatt::getWatt(
+                    [&]() {
+                        cublasGemmEx(handle,
+                                     CUBLAS_OP_N,
+                                     CUBLAS_OP_N,
+                                     m,
+                                     n,
+                                     k,
+                                     &alphaf,
+                                     devAf,
+                                     CUDA_R_32F,
+                                     m,
+                                     devBf,
+                                     CUDA_R_32F,
+                                     k,
+                                     &betaf,
+                                     devCf,
+                                     CUDA_R_32F,
+                                     m,
+                                     CUBLAS_COMPUTE_32F_EMULATED_16BFX9,
+                                     CUBLAS_GEMM_DEFAULT);
+                    },
+                    m,
+                    n,
+                    k);
+                cudaDeviceSynchronize();
+                cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaDeviceSynchronize();
+                eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+                outFile << phi << "," << m << "," << n << "," << k << "," << "SGEMM-BF16X9" << ",";
+                outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+                std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-BF16X9" << ",";
+                std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            }
+#endif
+
+            //--------------------
+            // C := A*B by cuMpSGEMM
+            //--------------------
+#if defined(cuMpSGEMM_FLAG)
+            cumpsgemm::handle_t cuMpSGEMM_handle;
+            cumpsgemm::create(cuMpSGEMM_handle);
+            cudaDeviceSynchronize();
+
+            res = getWatt::getWatt(
+                [&]() {
+                    gemm_FP16TCEC_SCALING(cuMpSGEMM_handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, alphaf, devAf, m, devBf, k, betaf, devCf, m);
+                },
+                m,
+                n,
+                k);
+
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "FP16TCEC_SCALING" << ",";
+            outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "FP16TCEC_SCALING" << ",";
+            std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+
+            cumpsgemm::destroy(cuMpSGEMM_handle);
+#endif
+
+            //--------------------
+            // C := A*B by ozaki-scheme2
+            //--------------------
+            for (auto &num_moduli : num_moduli_list) {
+
+                cudaDeviceSynchronize();
+                res = getWatt::getWatt(
+                    [&]() {
+                        gemmul8::gemm<float>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, m, devBf, k, &betaf, devCf, m, num_moduli, true, work_gemm);
+                    },
+                    m,
+                    n,
+                    k);
+
+                cudaDeviceSynchronize();
+                cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaDeviceSynchronize();
+                eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+                outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
+                outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+                std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
+                std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            }
+
+            //--------------------
+            // C := A*B by ozaki-scheme2
+            //--------------------
+            for (auto &num_moduli : num_moduli_list) {
+                cudaDeviceSynchronize();
+
+                res = getWatt::getWatt(
+                    [&]() {
+                        gemmul8::gemm<float>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, m, devBf, k, &betaf, devCf, m, num_moduli, false, work_gemm);
+                    },
+                    m,
+                    n,
+                    k);
+
+                cudaDeviceSynchronize();
+                cudaMemcpy(cpuCf, devCf, m * n * sizeof(float), cudaMemcpyDeviceToHost);
+                cudaDeviceSynchronize();
+                eval::err::gemm_err(m, n, cpuCf, cpuCd, maxerr, mederr);
+
+                outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
+                outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+                std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
+                std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+            }
         }
     }
 
@@ -811,33 +1632,56 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
 }
 
 int main(int argc, char **argv) {
+    std::chrono::system_clock::time_point start, stop;
     std::string deviceName = getDeviceName();
-    std::string dateTime   = getCurrentDateTime();
+    std::string startTime  = getCurrentDateTime(start);
 
-    bool run_accuracy = false;
-    bool run_flops    = false;
-    bool run_watt     = false;
+    bool run_accuracy   = false;
+    bool run_flops      = false;
+    bool run_watt       = false;
+    bool run_flops_rect = false;
+    bool run_watt_rect  = false;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "accuracy_check") {
+        if (arg == "accuracy") {
             run_accuracy = true;
-        } else if (arg == "flops_check") {
+        } else if (arg == "flops") {
             run_flops = true;
-        } else if (arg == "watt_check") {
+        } else if (arg == "watt") {
             run_watt = true;
+        } else if (arg == "flops_rect") {
+            run_flops_rect = true;
+        } else if (arg == "watt_rect") {
+            run_watt_rect = true;
         } else if (arg == "all") {
-            run_accuracy = true;
-            run_flops    = true;
-            run_watt     = true;
+            run_accuracy   = true;
+            run_flops      = true;
+            run_watt       = true;
+            run_flops_rect = true;
+            run_watt_rect  = true;
         }
     }
 
     if (run_accuracy)
-        accuracy_check(deviceName, dateTime);
+        accuracy_check(deviceName, startTime);
     if (run_flops)
-        time_check(deviceName, dateTime);
+        time_check(deviceName, startTime);
     if (run_watt)
-        watt_check(deviceName, dateTime);
+        watt_check(deviceName, startTime);
+    if (run_flops_rect)
+        time_check_rect(deviceName, startTime);
+    if (run_watt_rect)
+        watt_check_rect(deviceName, startTime);
+
+    std::string endTime = getCurrentDateTime(stop);
+    auto sec            = std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count() * 1.e-9;
+    std::cout << std::endl;
+    std::cout << "=========================" << std::endl;
+    std::cout << "start        : " << startTime << std::endl;
+    std::cout << "end          : " << endTime << std::endl;
+    std::cout << "elapsed time : " << sec << " [sec]" << std::endl;
+    std::cout << "=========================" << std::endl;
+    std::cout << std::endl;
 
     return 0;
 }

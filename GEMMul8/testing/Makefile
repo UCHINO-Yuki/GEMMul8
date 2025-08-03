@@ -1,13 +1,12 @@
 #===============
 # path to cuda
 #===============
-CUDA_PATH := /usr/local/cuda-12.8
+CUDA_PATH := /usr/local/cuda
 
 #===============
 # "ozIMMU_EF := yes" if you use the ozIMMU_EF (accelerated Ozaki scheme 1) in a sample code.
 #===============
 ozIMMU_EF := yes
-# ozIMMU_EF := no
 
 #===============
 # path to ozIMMU_EF (Set this if "ozIMMU_EF := yes")
@@ -15,10 +14,9 @@ ozIMMU_EF := yes
 ozIMMU_EF_DIR := ../../ozIMMU_EF
 
 #===============
-# "cuMpSGEMM := yes" if you use the cuMpSGEMM in a sample code.
+# "cuMpSGEMM := yes" if you use the cuMpSGEMM in a sample code and compute_cap < 100.
 #===============
 cuMpSGEMM := yes
-# cuMpSGEMM := no
 
 #===============
 # path to cuMpSGEMM (Set this if "cuMpSGEMM := yes")
@@ -31,10 +29,16 @@ export PATH := $(CUDA_PATH)/bin/lib64:$(PATH)
 
 GPU_ARCH := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -d '.')
 ARCHS := -gencode arch=compute_$(GPU_ARCH),code=sm_$(GPU_ARCH)
-NVCCFLAGS := -std=c++20 $(ARCHS) -lnvidia-ml -I../include -O3
+GPU_MEM_MB := $(shell nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)
+NVCCFLAGS := -std=c++20 $(ARCHS) -lnvidia-ml -I../include -O3 -DGPU_MEM_MB=$(GPU_MEM_MB)
 
 LIBS := -lcublas -lcudart -lcuda -L../lib -lgemmul8
 LD:=
+
+ifneq ($(filter $(GPU_ARCH), 80 86 87 89 90),)
+else
+    cuMpSGEMM := no
+endif
 
 ifeq ($(ozIMMU_EF),yes)
 NVCCFLAGS += -DozIMMU_EF_FLAG -I$(ozIMMU_EF_DIR)/include
@@ -53,6 +57,13 @@ LIBS += -L$(cuMpSGEMM_DIR)/build -lcumpsgemm
 LD+=$(cuMpSGEMM_DIR)/build/libcumpsgemm.so
 endif
 endif
+
+$(info CUDA_PATH    : $(CUDA_PATH))
+$(info GPU_ARCH     : $(GPU_ARCH))
+$(info ozIMMU_EF    : $(ozIMMU_EF))
+$(info ozIMMU_EF_DIR: $(ozIMMU_EF_DIR))
+$(info cuMpSGEMM    : $(cuMpSGEMM))
+$(info cuMpSGEMM_DIR: $(cuMpSGEMM_DIR))
 
 TARGET_d := test_double
 TARGET_f := test_float

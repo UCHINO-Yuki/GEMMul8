@@ -24,6 +24,7 @@ __constant__ tab_t<double> moduli_dev[20];
 __constant__ tab_t<float> modulif_dev[20];
 __constant__ double NMi_dev[40];
 
+// -moduli & 1/moduli
 constexpr tab_t<double> moduli[20] = {
     {-256.0, 0x1.0000000000000p-8, -256.0F, 0x1.0000000000000p-8F},
     {-255.0, 0x1.0101010101010p-8, -255.0F, 0x1.0101020000000p-8F},
@@ -47,6 +48,7 @@ constexpr tab_t<double> moduli[20] = {
     {-173.0, 0x1.7ad2208e0ecc3p-8, -173.0F, 0x1.7ad2200000000p-8F}
 };
 
+// -moduli & 1/moduli
 constexpr tab_t<float> modulif[20] = {
     {-256.0F, 0x1.0000000000000p-8F},
     {-255.0F, 0x1.0101020000000p-8F},
@@ -70,6 +72,7 @@ constexpr tab_t<float> modulif[20] = {
     {-173.0F, 0x1.7ad2200000000p-8F}
 };
 
+// floor(2^32/p(i) - 1)
 constexpr int32_t invm_32i[19] = {
     16843008,
     16976154,
@@ -94,6 +97,7 @@ constexpr int32_t invm_32i[19] = {
 
 constexpr int numM[19] = {1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
 
+// prod(p)
 constexpr double M[19][2] = {
     {6.5280000000000000e+04,  0.0000000000000000e+00},
     {1.6515840000000000e+07,  0.0000000000000000e+00},
@@ -116,6 +120,7 @@ constexpr double M[19][2] = {
     {5.9079700598002656e+46, -4.2754890730815036e+29}
 };
 
+// 1/prod(p)
 constexpr double invM[19] = {
     1.5318627450980392e-05,
     6.0547934588855299e-08,
@@ -192,6 +197,9 @@ constexpr float log2M[19] = {
 
 } // namespace vecnorm
 
+// [~, x, ~] = gcd(prod(p)/p(i),p(i));
+// N(i) = mod(x, p(i));
+// NMi(i) = N(i).*prod(p)/p(i);
 constexpr double NMi_1[19][20] = {
     {
      6.5025000000000000e+04,

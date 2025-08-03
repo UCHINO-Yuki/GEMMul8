@@ -6,6 +6,7 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
+#include <iostream>
 #include <random>
 #include <vector>
 
