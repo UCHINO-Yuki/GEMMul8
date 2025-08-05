@@ -171,7 +171,7 @@ for fn = 1:length(filename_d)
         plot(xx, OS2_fast, mark(1,3), 'DisplayName', "OS II-fast", 'LineWidth',1);
         plot(xx, OS2_accu, mark(1,4), 'DisplayName', "OS II-accu", 'LineWidth',1);
 
-        xr = xregion(14,18,FaceColor="r");
+        xr = xregion(14,17,FaceColor="r");
         set(get(get(xr, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off');
 
         xlim(XLIM);

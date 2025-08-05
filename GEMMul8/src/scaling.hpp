@@ -89,7 +89,7 @@ template <typename T> __forceinline__ __device__ int8_t T2int8i(T in, const int 
 template <> __forceinline__ __device__ int8_t T2int8i<double>(double in, const int sft) {
     int64_t bits = __double_as_longlong(in);
     int exp      = (int)((bits >> 52) & 0x7FF);
-    bits &= ((1ULL << 52) - 1);
+    bits &= ((1LL << 52) - 1);
     int is_sub = (exp == 0);
 
     int numzero      = (is_sub) ? (12 - __clzll(bits)) : 0;
@@ -103,8 +103,8 @@ template <> __forceinline__ __device__ int8_t T2int8i<double>(double in, const i
 }
 template <> __forceinline__ __device__ int8_t T2int8i<float>(float in, const int sft) {
     int bits = __float_as_int(in);
-    int exp  = (int)((bits >> 23) & 0x7FF);
-    bits &= ((1U << 23) - 1);
+    int exp  = (int)((bits >> 23) & 0xFF);
+    bits &= ((1 << 23) - 1);
     int is_sub = (exp == 0);
 
     int numzero  = (is_sub) ? (10 - __clz(bits)) : 0;
