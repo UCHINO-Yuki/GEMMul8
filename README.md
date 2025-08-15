@@ -6,13 +6,15 @@ GEMMul8 (GEMMulate): GEMM emulation using int8 matrix engines based on the Ozaki
 - [Attention](#attention)
 - [Usage](#usage)
 - [Numerical results](#numerical-results)
+  - [Environments](#environments)
   - [Accuracy](#accuracy)
   - [Throughput performance](#throughput-performance)
   - [Power efficiency](#power-efficiency)
+  - [Supplementary Experiment](#supplementary-experiment)
 - [Acknowledgment](#acknowledgment)
 - [Contact](#contact)
 - [References](#references)
-- [Citation](#citation)
+- [Citations](#citations)
 - [License](#license)
 
 ## Build
@@ -101,6 +103,13 @@ time_breakdown = gemmul8::gemm(cublas_handle,   // Handle to the cuBLAS library 
 The constant $\phi$ controls the difficulty of matrix multiplication (exponent distribution of input matrices).
 The difficulty of $\phi = 0.5$ is comparable to that of matrix multiplication in HPL.
 
+### Environments
+
+- an NVIDIA Ampere A100 SXM4 GPU with an AMD EPYC 7713 CPU , CUDA Toolkit 12.9.86, and gcc 11.5.0
+- an NVIDIA GH200 Grace Hopper Superchip with CUDA Toolkit 12.9.86, and gcc 11.5.0
+- an NVIDIA GeForce RTX 5080 Blackwell GPU with an AMD Ryzen 9 7950X CPU, CUDA Toolkit 12.9.86, and gcc 11.5.0
+- an NVIDIA B200 Blackwell GPU with an Intel Xeon Platinum 8570 CPU, CUDA Toolkit 12.8.93, and gcc 13.3.0
+
 ### Accuracy
 
 ![accuracy_dgemm](./GEMMul8/testing/results_02/fig/oz2_results_df_accuracy.png)
@@ -122,6 +131,12 @@ _Power efficiency of DGEMM emulation on A100 (top), GH200 (middle), and RTX 5080
 ![power_sgemm](./GEMMul8/testing/results_02/fig/oz2_results_f_watt.png)
 _Power efficiency of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
 
+### Supplementary Experiment
+
+- On B200, native DGEMM achieved 36.0 TFLOPS, whereas fast mode and accurate mode with 14--17 moduli achieved 98.9--123 TFLOPS and 92.5--110 TFLOPS, respectively, for emulating DGEMM for $m=n=k=16384$.
+
+- On B200, native SGEMM achieved 67.2 TFLOPS, whereas fast mode with 7--9 moduli and accurate mode with 6--8 moduli achieved 197--259 TFLOPS and 194--240 TFLOPS, respectively, for emulating SGEMM for $m=n=k=16384$.
+
 ## Acknowledgment
 
 Assistance with debugging the code was provided by:
@@ -133,6 +148,11 @@ Assistance with debugging the code was provided by:
   - School of Chemistry, Indian Institute of Science and Education Research (IISER), Thiruvananthapuram
   - Intern at RIKEN Center for Computational Science, Japan
 - Dr. William Dawson
+  - RIKEN Center for Computational Science, Japan
+
+Assistance with experiments on the NVIDIA B200 Blackwell GPU, courtesy of Rio Yokota (Institute of Science Tokyo), was provided by:
+
+- Dr. Qianxiang Ma
   - RIKEN Center for Computational Science, Japan
 
 **Please do not contact the individuals listed above regarding this code.**
@@ -150,7 +170,7 @@ Assistance with debugging the code was provided by:
 - Hiroyuki Ootomo, Katsuhisa Ozaki, and Rio Yokota. 2024. DGEMM on integer matrix multiplication unit. The International Journal of High Performance Computing Applications 38, 4 (2024), 297--313.
 - Yuki Uchino, Katsuhisa Ozaki, and Toshiyuki Imamura. 2025. Performance enhancement of the Ozaki Scheme on integer matrix multiplication unit. The International Journal of High Performance Computing Applications 39, 3 (2025), 462--476.
 
-## Citation
+## Citations
 
 ```
 @misc{ozaki2025ozakischemeiigemmoriented,
@@ -161,6 +181,16 @@ Assistance with debugging the code was provided by:
       archivePrefix={arXiv},
       primaryClass={cs.MS},
       url={https://arxiv.org/abs/2504.08009},
+}
+
+@misc{uchino2025highperformancepowerefficientemulationmatrix,
+      title={High-Performance and Power-Efficient Emulation of Matrix Multiplication using INT8 Matrix Engines},
+      author={Yuki Uchino and Katsuhisa Ozaki and Toshiyuki Imamura},
+      year={2025},
+      eprint={2508.03984},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC},
+      url={https://arxiv.org/abs/2508.03984},
 }
 
 and

@@ -6,7 +6,7 @@ CUDA_PATH := /usr/local/cuda
 #===============
 # "ozIMMU_EF := yes" if you use the ozIMMU_EF (accelerated Ozaki scheme 1) in a sample code.
 #===============
-ozIMMU_EF := yes
+ozIMMU_EF := no
 
 #===============
 # path to ozIMMU_EF (Set this if "ozIMMU_EF := yes")
@@ -16,7 +16,7 @@ ozIMMU_EF_DIR := ../../ozIMMU_EF
 #===============
 # "cuMpSGEMM := yes" if you use the cuMpSGEMM in a sample code and compute_cap < 100.
 #===============
-cuMpSGEMM := yes
+cuMpSGEMM := no
 
 #===============
 # path to cuMpSGEMM (Set this if "cuMpSGEMM := yes")
