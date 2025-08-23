@@ -29,8 +29,8 @@ template <> __forceinline__ __device__ int32_t Tabs<int32_t>(int32_t in) { retur
 // template <> __forceinline__ __device__ float Ttrunc<float>(float in) { return truncf(in); };
 
 template <typename T> __forceinline__ __device__ int Tilogb(T in);
-template <> __forceinline__ __device__ int Tilogb<double>(double in) { return ilogb(in); };
-template <> __forceinline__ __device__ int Tilogb<float>(float in) { return ilogbf(in); };
+template <> __forceinline__ __device__ int Tilogb<double>(double in) { return (in == 0.0) ? 0 : ilogb(in); };
+template <> __forceinline__ __device__ int Tilogb<float>(float in) { return (in == 0.0F) ? 0 : ilogbf(in); };
 
 template <typename T> __forceinline__ __device__ T Tzero() { return 0; };
 template <> __forceinline__ __device__ double Tzero<double>() { return 0.0; };
@@ -45,77 +45,218 @@ template <> __forceinline__ __device__ float __Tfma_ru<float>(float in1, float i
 // trunc(scalbn(in,sft))
 //==========================
 template <typename T> __forceinline__ __device__ T T2int_fp(T in, const int sft);
-template <> __forceinline__ __device__ double T2int_fp<double>(double in, const int sft) {
-    int64_t bits = __double_as_longlong(in);
-    int64_t sign = bits & 0x8000000000000000LL;
-    int exp_raw  = (int)((bits >> 52) & 0x7FF);
-    bits &= ((1ULL << 52) - 1);
+template <>
+__forceinline__ __device__ double T2int_fp<double>(double in, const int sft) {
+    int64_t bits                = __double_as_longlong(in);
+    const int64_t sign          = bits & 0x8000000000000000LL;
+    const int exp_raw           = (int)((bits >> 52) & 0x7FF);
+    const int64_t mantissa_bits = bits & 0x000FFFFFFFFFFFFFULL;
 
-    int is_sub = (exp_raw == 0);
-    int lz     = 12 - __clzll(bits);
-    int e      = is_sub ? lz : exp_raw;
-    e += sft;
+    if (exp_raw != 0) {
+        int final_exp = exp_raw + sft;
+        if (final_exp < 1023) {
+            return __longlong_as_double(sign);
+        }
+        if (final_exp >= 1075) {
+            bits = sign | (int64_t)final_exp << 52 | mantissa_bits;
+            return __longlong_as_double(bits);
+        }
 
-    int64_t frac_full = is_sub ? (bits << (2 - lz)) ^ (1LL << 52) : bits;
-    int64_t mask      = -1LL << max(1075 - e, 0);
+        const int64_t mantissa_full  = mantissa_bits | (1LL << 52);
+        const int chop_bits          = 1075 - final_exp;
+        const int64_t mask           = -1LL << chop_bits;
+        const int64_t final_mantissa = (mantissa_full & mask) & 0x000FFFFFFFFFFFFFULL;
 
-    bits            = sign | int64_t(e) << 52 | (frac_full & mask);
-    int64_t out_exp = (e < 1023) ? sign : bits;
-    return __longlong_as_double(out_exp);
+        bits = sign | (int64_t)final_exp << 52 | final_mantissa;
+        return __longlong_as_double(bits);
+    }
+
+    if (mantissa_bits == 0) {
+        return in;
+    }
+
+    const int lz = 12 - __clzll(mantissa_bits);
+    int e        = lz + sft;
+
+    if (e < 1023) {
+        return __longlong_as_double(sign);
+    }
+
+    const int64_t frac_full = (mantissa_bits << (2 - lz)) ^ (1LL << 52);
+    const int64_t mask      = -1LL << max(1075 - e, 0);
+
+    bits = sign | (int64_t)e << 52 | (frac_full & mask);
+    return __longlong_as_double(bits);
 }
-template <> __forceinline__ __device__ float T2int_fp<float>(float in, const int sft) {
-    int bits    = __float_as_int(in);
-    int sign    = bits & 0x80000000;
-    int exp_raw = (bits >> 23) & 0xFF;
-    bits &= (1 << 23) - 1;
+template <>
+__forceinline__ __device__ float T2int_fp<float>(float in, const int sft) {
+    int32_t bits                = __float_as_int(in);
+    const int32_t sign          = bits & 0x80000000;
+    const int exp_raw           = (bits >> 23) & 0xFF;
+    const int32_t mantissa_bits = bits & 0x007FFFFF;
 
-    int is_sub = (exp_raw == 0);
-    int lz     = 9 - __clz(bits);
-    int e      = is_sub ? lz : exp_raw;
-    e += sft;
+    if (exp_raw != 0) {
+        int final_exp = exp_raw + sft;
+        if (final_exp < 127) {
+            return __int_as_float(sign);
+        }
+        if (final_exp >= 150) {
+            bits = sign | final_exp << 23 | mantissa_bits;
+            return __int_as_float(bits);
+        }
 
-    int frac_full = is_sub ? (bits << (2 - lz)) ^ (1 << 23) : bits;
-    int mask      = -1 << max(150 - e, 0);
+        const int32_t mantissa_full  = mantissa_bits | (1 << 23);
+        const int chop_bits          = 150 - final_exp;
+        const int32_t mask           = -1 << chop_bits;
+        const int32_t final_mantissa = (mantissa_full & mask) & 0x007FFFFF;
 
-    bits        = sign | (e << 23) | (frac_full & mask);
-    int out_exp = (e < 127) ? sign : bits;
-    return __int_as_float(out_exp);
+        bits = sign | final_exp << 23 | final_mantissa;
+        return __int_as_float(bits);
+    }
+
+    if (mantissa_bits == 0) {
+        return in;
+    }
+
+    const int lz = 9 - __clz(mantissa_bits);
+    int e        = lz + sft;
+
+    if (e < 127) {
+        return __int_as_float(sign);
+    }
+
+    const int32_t frac_full = (mantissa_bits << (2 - lz)) ^ (1 << 23);
+    const int32_t mask      = -1 << max(150 - e, 0);
+
+    bits = sign | e << 23 | (frac_full & mask);
+    return __int_as_float(bits);
 }
+// template <> __forceinline__ __device__ double T2int_fp<double>(double in, const int sft) {
+//     int64_t bits = __double_as_longlong(in);
+//     int64_t sign = bits & 0x8000000000000000LL;
+//     int exp_raw  = (int)((bits >> 52) & 0x7FF);
+//     bits &= ((1ULL << 52) - 1);
+
+//     int is_sub = (exp_raw == 0);
+//     int lz     = 12 - __clzll(bits);
+//     int e      = is_sub ? lz : exp_raw;
+//     e += sft;
+
+//     int64_t frac_full = is_sub ? (bits << (2 - lz)) ^ (1LL << 52) : bits;
+//     int64_t mask      = -1LL << max(1075 - e, 0);
+
+//     bits            = sign | int64_t(e) << 52 | (frac_full & mask);
+//     int64_t out_exp = (e < 1023) ? sign : bits;
+//     return __longlong_as_double(out_exp);
+// }
+// template <> __forceinline__ __device__ float T2int_fp<float>(float in, const int sft) {
+//     int bits    = __float_as_int(in);
+//     int sign    = bits & 0x80000000;
+//     int exp_raw = (bits >> 23) & 0xFF;
+//     bits &= (1 << 23) - 1;
+
+//     int is_sub = (exp_raw == 0);
+//     int lz     = 9 - __clz(bits);
+//     int e      = is_sub ? lz : exp_raw;
+//     e += sft;
+
+//     int frac_full = is_sub ? (bits << (2 - lz)) ^ (1 << 23) : bits;
+//     int mask      = -1 << max(150 - e, 0);
+
+//     bits        = sign | (e << 23) | (frac_full & mask);
+//     int out_exp = (e < 127) ? sign : bits;
+//     return __int_as_float(out_exp);
+// }
 
 //==========================
 // int8_t(ceil(scalbn(fabs(in),sft)))
 //==========================
 template <typename T> __forceinline__ __device__ int8_t T2int8i(T in, const int sft);
 template <> __forceinline__ __device__ int8_t T2int8i<double>(double in, const int sft) {
-    int64_t bits = __double_as_longlong(in);
-    int exp      = (int)((bits >> 52) & 0x7FF);
-    bits &= ((1LL << 52) - 1);
-    int is_sub = (exp == 0);
+    int64_t bits_full           = __double_as_longlong(in);
+    const int exp_biased        = (int)((bits_full >> 52) & 0x7FF);
+    const int64_t mantissa_bits = bits_full & 0x000FFFFFFFFFFFFFULL;
+    int64_t result;
 
-    int numzero      = (is_sub) ? (12 - __clzll(bits)) : 0;
-    int e            = (is_sub) ? numzero : exp;
-    exp              = 1075 - e - sft;
-    int64_t mantissa = (is_sub) ? (bits << (2 - numzero)) : (bits | (1LL << 52));
+    if (exp_biased != 0) {
+        const int64_t mantissa_full = mantissa_bits | (1LL << 52);
+        const int shift_amount      = 1075 - exp_biased - sft;
 
-    bits           = 1LL << exp;
-    int64_t result = (mantissa + bits - 1) >> exp;
+        const int64_t divisor = 1LL << shift_amount;
+        result                = (mantissa_full + divisor - 1) >> shift_amount;
+        return static_cast<int8_t>(result);
+    }
+
+    if (mantissa_bits == 0) {
+        return static_cast<int8_t>(0);
+    }
+
+    const int numzero           = 12 - __clzll(mantissa_bits);
+    const int64_t mantissa_full = mantissa_bits << (2 - numzero);
+    const int shift_amount      = 1075 - numzero - sft;
+
+    const int64_t divisor = 1LL << shift_amount;
+    result                = (mantissa_full + divisor - 1) >> shift_amount;
     return static_cast<int8_t>(result);
 }
 template <> __forceinline__ __device__ int8_t T2int8i<float>(float in, const int sft) {
-    int bits = __float_as_int(in);
-    int exp  = (int)((bits >> 23) & 0xFF);
-    bits &= ((1 << 23) - 1);
-    int is_sub = (exp == 0);
+    int32_t bits_full           = __float_as_int(in);
+    const int exp_biased        = (bits_full >> 23) & 0xFF;
+    const int32_t mantissa_bits = bits_full & 0x007FFFFFU;
+    int32_t result;
 
-    int numzero  = (is_sub) ? (10 - __clz(bits)) : 0;
-    int e        = (is_sub) ? numzero : exp;
-    exp          = 150 - e - sft;
-    int mantissa = (is_sub) ? (bits << (2 - numzero)) : (bits | (1LL << 23));
+    if (exp_biased != 0) {
+        const int32_t mantissa_full = mantissa_bits | (1 << 23);
+        const int shift_amount      = 150 - exp_biased - sft;
 
-    bits = 1 << exp;
-    exp  = (mantissa + bits - 1) >> exp;
-    return static_cast<int8_t>(exp);
+        const int32_t divisor = 1 << shift_amount;
+        result                = (mantissa_full + divisor - 1) >> shift_amount;
+        return static_cast<int8_t>(result);
+    }
+
+    if (mantissa_bits == 0) {
+        return static_cast<int8_t>(0);
+    }
+
+    const int numzero           = 9 - __clz(mantissa_bits);
+    const int32_t mantissa_full = mantissa_bits << (2 - numzero);
+    const int shift_amount      = 150 - numzero - sft;
+
+    const int32_t divisor = 1 << shift_amount;
+    result                = (mantissa_full + divisor - 1) >> shift_amount;
+    return static_cast<int8_t>(result);
 }
+
+// template <> __forceinline__ __device__ int8_t T2int8i<double>(double in, const int sft) {
+//     int64_t bits = __double_as_longlong(in);
+//     int exp      = (int)((bits >> 52) & 0x7FF);
+//     bits &= ((1LL << 52) - 1);
+//     int is_sub = (exp == 0);
+
+//     int numzero      = (is_sub) ? (12 - __clzll(bits)) : 0;
+//     int e            = (is_sub) ? numzero : exp;
+//     exp              = 1075 - e - sft;
+//     int64_t mantissa = (is_sub) ? (bits << (2 - numzero)) : (bits | (1LL << 52));
+
+//     bits           = 1LL << exp;
+//     int64_t result = (mantissa + bits - 1) >> exp;
+//     return static_cast<int8_t>(result);
+// }
+// template <> __forceinline__ __device__ int8_t T2int8i<float>(float in, const int sft) {
+//     int bits = __float_as_int(in);
+//     int exp  = (int)((bits >> 23) & 0xFF);
+//     bits &= ((1 << 23) - 1);
+//     int is_sub = (exp == 0);
+
+//     int numzero  = (is_sub) ? (9 - __clz(bits)) : 0;
+//     int e        = (is_sub) ? numzero : exp;
+//     exp          = 150 - e - sft;
+//     int mantissa = (is_sub) ? (bits << (2 - numzero)) : (bits | (1 << 23));
+
+//     bits = 1 << exp;
+//     exp  = (mantissa + bits - 1) >> exp;
+//     return static_cast<int8_t>(exp);
+// }
 
 template <typename T> __forceinline__ __device__ void inner_warp_max(T &amax) {
     amax = max(amax, __shfl_down_sync(0xFFFFFFFFu, amax, 16)); // warp-level reduction
@@ -274,7 +415,8 @@ template <> __device__ __forceinline__ int8_t mod_8i<float, 3>(float a, unsigned
 namespace int8tc {
 
 __forceinline__ __device__ int compute_sft(int amax, int16_t sftA, const float log2M) {
-    return sftA + __float2int_rd(__fmaf_rd(-0.51F, __log2f(__int2float_rn(amax)), log2M));
+    // return sftA + __float2int_rd(__fmaf_rd(-0.51F, __log2f(__int2float_rn(amax)), log2M));
+    return sftA + __float2int_rd(__fmaf_rd(-0x1.0000060000000p-1F, __log2f(__int2float_rn(amax)), log2M));
 }
 
 // extract first 7-bit of A^T
@@ -838,14 +980,16 @@ namespace vecnorm {
 
 template <typename T> __forceinline__ __device__ int compute_sft(T amax, T vecnrm, const float log2M);
 template <> __forceinline__ __device__ int compute_sft<double>(double amax, double vecnrm, const float log2M) {
-    const int exponent  = ilogb(vecnrm);
+    const int exponent  = Tilogb<double>(vecnrm);
     const float vecnrmf = __double2float_ru(scalbn(vecnrm, -exponent));
-    const int k         = __float2int_rd(__fmaf_rd(-0.51F, __fadd_ru(__log2f(vecnrmf), exponent), log2M));
-    return min(__float2int_rd(log2M - 1.0f), k) - ilogb(amax);
+    // const int k         = __float2int_rd(__fmaf_rd(-0.51F, __fadd_ru(__log2f(vecnrmf), exponent), log2M));
+    const int k = __float2int_rd(__fmaf_rd(-0x1.0000060000000p-1F, __fadd_ru(__log2f(vecnrmf), exponent), log2M));
+    return min(__float2int_rd(log2M - 1.0f), k) - Tilogb<double>(amax);
 }
 template <> __forceinline__ __device__ int compute_sft<float>(float amax, float vecnrm, const float log2M) {
-    const int k = __float2int_rd(__fmaf_rd(-0.51F, __log2f(vecnrm), log2M));
-    return min(__float2int_rd(log2M - 1.0f), k) - ilogbf(amax);
+    // const int k = __float2int_rd(__fmaf_rd(-0.51F, __log2f(vecnrm), log2M));
+    const int k = __float2int_rd(__fmaf_rd(-0x1.0000060000000p-1F, __log2f(vecnrm), log2M));
+    return min(__float2int_rd(log2M - 1.0f), k) - Tilogb<float>(amax);
 }
 
 // convert trunc(diag(2^sftA)*A)^T to A8i
