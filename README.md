@@ -5,6 +5,8 @@ GEMMul8 (GEMMulate): GEMM emulation using int8 matrix engines based on the Ozaki
 - [Build](#build)
 - [Attention](#attention)
 - [Usage](#usage)
+  - [1. Direct Usage (normal)](#1-direct-usage-normal)
+  - [2. Hijack cuBLAS GEMM (Hook Mode)](#2-hijack-cublas-gemm-hook-mode)
 - [Numerical results](#numerical-results)
   - [Environments](#environments)
   - [Accuracy](#accuracy)
@@ -28,6 +30,7 @@ GEMMul8 (GEMMulate): GEMM emulation using int8 matrix engines based on the Ozaki
    - `ozIMMU_EF_DIR`: path to ozIMMU_EF (e.g., `ozIMMU_EF_DIR := path/to/ozIMMU_EF`)
    - `cuMpSGEMM`: `yes` if the cuMpSGEMM is used in sample codes (e.g., `cuMpSGEMM := yes`)
    - `cuMpSGEMM_DIR`: path to cuMpSGEMM (e.g., `cuMpSGEMM_DIR := path/to/cuMpSGEMM`)
+   - `hijack`: `yes` if you are hijacking cublasGemmEx with emulation (e.g., `hijack := yes`)
    - Note: Please specify `ozIMMU_EF_DIR` and `cuMpSGEMM_DIR` as the parent directories of `build` directories, i.e., `build` directories are located as `ozIMMU_EF_DIR/build` and `cuMpSGEMM_DIR/build`.
 
 3. Run `make` in the `GEMMul8` directory to compile all files.
@@ -54,6 +57,12 @@ GEMMul8 (GEMMulate): GEMM emulation using int8 matrix engines based on the Ozaki
 - If you use these libraries, you must comply with their license terms in addition to the license for this code.
 
 ## Usage
+
+This library provides two ways to use the GEMM emulation:
+
+### 1. Direct Usage (normal)
+
+This approach does not override cuBLAS; you call your custom functions explicitly.
 
 ```
 //----------
@@ -97,6 +106,25 @@ time_breakdown = gemmul8::gemm(cublas_handle,   // Handle to the cuBLAS library 
                                fastmode,        // Computing mode
                                work);           // workspace
 ```
+
+### 2. Hijack cuBLAS GEMM (Hook Mode)
+
+The library can automatically intercept calls to cuBLAS GEMM functions (cublasSgemm, cublasDgemm, cublasGemmEx) and redirect them to the emulation:
+
+```
+export LD_PRELOAD=/path/to/libgemmul8.so
+export NUM_MODULI=15
+export FASTMODE=1
+```
+
+- `NUM_MODULI` (default: `18`)
+  - Specifies the number of moduli `unsigned num_moduli` used in the GEMM emulation.
+- `FASTMODE` (default: `1`)
+  - Enables fast mode in the GEMM emulation. If `FASTMODE=1`, `bool fastmode = true;`, otherwise, `bool fastmode = false;`.
+
+The hook mode works transparently: existing calls to cuBLAS GEMM will use the emulation.
+
+You can switch back to standard cuBLAS by not setting LD_PRELOAD.
 
 ## Numerical results
 
@@ -150,7 +178,7 @@ Assistance with debugging the code was provided by:
 - Dr. William Dawson
   - RIKEN Center for Computational Science, Japan
 
-Assistance with experiments on the NVIDIA B200 Blackwell GPU, courtesy of Rio Yokota (Institute of Science Tokyo), was provided by:
+Assistance with experiments on the NVIDIA B200 Blackwell GPU, courtesy of Prof. Rio Yokota (Institute of Science Tokyo), was provided by:
 
 - Dr. Qianxiang Ma
   - RIKEN Center for Computational Science, Japan

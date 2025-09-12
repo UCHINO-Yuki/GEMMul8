@@ -23,6 +23,11 @@ cuMpSGEMM := no
 #===============
 cuMpSGEMM_DIR := ../../cuMpSGEMM
 
+#===============
+# "hijack := yes" if you are hijacking cublasGemmEx with emulation
+#===============
+hijack := no
+
 
 export PATH := $(CUDA_PATH)/bin:$(PATH)
 export PATH := $(CUDA_PATH)/bin/lib64:$(PATH)
@@ -56,6 +61,10 @@ NVCCFLAGS += -DcuMpSGEMM_FLAG -I$(cuMpSGEMM_DIR)/include
 LIBS += -L$(cuMpSGEMM_DIR)/build -lcumpsgemm
 LD+=$(cuMpSGEMM_DIR)/build/libcumpsgemm.so
 endif
+endif
+
+ifeq ($(hijack),yes)
+LD+=../lib/libgemmul8.so
 endif
 
 $(info CUDA_PATH    : $(CUDA_PATH))
