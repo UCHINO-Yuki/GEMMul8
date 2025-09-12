@@ -119,7 +119,7 @@ export FASTMODE=1
 
 - `NUM_MODULI` (default: `18`)
   - Specifies the number of moduli `unsigned num_moduli` used in the GEMM emulation.
-- `FASTMODE` (default: `1`)
+- `FASTMODE` (default: `0`)
   - Enables fast mode in the GEMM emulation. If `FASTMODE=1`, `bool fastmode = true;`, otherwise, `bool fastmode = false;`.
 
 The hook mode works transparently: existing calls to cuBLAS GEMM will use the emulation.
