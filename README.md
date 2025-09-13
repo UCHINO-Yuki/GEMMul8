@@ -109,7 +109,7 @@ time_breakdown = gemmul8::gemm(cublas_handle,   // Handle to the cuBLAS library 
 
 ### 2. Hijack cuBLAS GEMM (Hook Mode)
 
-The library can automatically intercept calls to cuBLAS GEMM functions (cublasSgemm, cublasDgemm, cublasGemmEx) and redirect them to the emulation:
+The library can automatically intercept calls to cuBLAS GEMM functions (cublasSgemm_v2, cublasDgemm_v2, cublasGemmEx) and redirect them to the emulation:
 
 ```
 export LD_PRELOAD=/path/to/libgemmul8.so
