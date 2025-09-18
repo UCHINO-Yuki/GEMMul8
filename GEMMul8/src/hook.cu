@@ -29,14 +29,28 @@ thread_local size_t cached_size = 0;
 } // namespace
 
 namespace {
-static void *get_work(size_t req_size) {
-    if (req_size == 0) return nullptr;
+static cublasStatus_t get_work(size_t req_size, void **work_ptr) {
+    if (req_size == 0) {
+        *work_ptr = nullptr;
+        return CUBLAS_STATUS_SUCCESS;
+    }
     if (cached_size < req_size) {
-        if (cached_work) cudaFree(cached_work);
-        cudaMalloc(&cached_work, req_size);
+        if (cached_work) {
+            cudaFree(cached_work);
+        }
+        cudaError_t err = cudaMalloc(&cached_work, req_size);
+        if (err != cudaSuccess) {
+            std::cerr << "[GEMMUL8 HOOK] cudaMalloc failed for size " << req_size
+                      << " bytes. Error: " << cudaGetErrorString(err) << std::endl;
+            cached_work = nullptr;
+            cached_size = 0;
+            *work_ptr   = nullptr;
+            return CUBLAS_STATUS_EXECUTION_FAILED;
+        }
         cached_size = req_size;
     }
-    return cached_work;
+    *work_ptr = cached_work;
+    return CUBLAS_STATUS_SUCCESS;
 }
 
 __attribute__((destructor)) static void cleanup_work() {
@@ -79,9 +93,12 @@ extern "C" cublasStatus_t cublasSgemm_v2(cublasHandle_t handle,
     get_env(num_moduli, fastmode);
 
     size_t wsize = gemmul8::workSize(m, n, k, num_moduli);
-    // void *work   = nullptr;
-    // if (wsize > 0) cudaMalloc(&work, wsize);
-    void *work = get_work(wsize);
+    // void *work   = get_work(wsize);
+    void *work            = nullptr;
+    cublasStatus_t status = get_work(wsize, &work);
+    if (status != CUBLAS_STATUS_SUCCESS) {
+        return status;
+    }
 
     float one_f = 1.0f, zero_f = 0.0f;
     const float *alpha_f = alpha ? alpha : &one_f;
@@ -104,7 +121,6 @@ extern "C" cublasStatus_t cublasSgemm_v2(cublasHandle_t handle,
                          fastmode,
                          work);
 
-    // if (work) cudaFree(work);
     return CUBLAS_STATUS_SUCCESS;
 
 #endif
@@ -141,9 +157,12 @@ extern "C" cublasStatus_t cublasDgemm_v2(cublasHandle_t handle,
     get_env(num_moduli, fastmode);
 
     size_t wsize = gemmul8::workSize(m, n, k, num_moduli);
-    // void *work   = nullptr;
-    // if (wsize > 0) cudaMalloc(&work, wsize);
-    void *work = get_work(wsize);
+    // void *work = get_work(wsize);
+    void *work            = nullptr;
+    cublasStatus_t status = get_work(wsize, &work);
+    if (status != CUBLAS_STATUS_SUCCESS) {
+        return status;
+    }
 
     double one_d = 1.0, zero_d = 0.0;
     const double *alpha_d = alpha ? alpha : &one_d;
@@ -166,7 +185,6 @@ extern "C" cublasStatus_t cublasDgemm_v2(cublasHandle_t handle,
                           fastmode,
                           work);
 
-    // if (work) cudaFree(work);
     return CUBLAS_STATUS_SUCCESS;
 
 #endif
@@ -213,9 +231,12 @@ extern "C" cublasStatus_t cublasGemmEx(cublasHandle_t handle,
         get_env(num_moduli, fastmode);
 
         size_t wsize = gemmul8::workSize(m, n, k, num_moduli);
-        // void *work   = nullptr;
-        // if (wsize > 0) cudaMalloc(&work, wsize);
-        void *work = get_work(wsize);
+        // void *work = get_work(wsize);
+        void *work            = nullptr;
+        cublasStatus_t status = get_work(wsize, &work);
+        if (status != CUBLAS_STATUS_SUCCESS) {
+            return status;
+        }
 
         float one_f = 1.0f, zero_f = 0.0f;
         const float *alpha_f = alpha ? static_cast<const float *>(alpha) : &one_f;
@@ -238,7 +259,6 @@ extern "C" cublasStatus_t cublasGemmEx(cublasHandle_t handle,
                              fastmode,
                              work);
 
-        // if (work) cudaFree(work);
         return CUBLAS_STATUS_SUCCESS;
     }
 
@@ -252,9 +272,12 @@ extern "C" cublasStatus_t cublasGemmEx(cublasHandle_t handle,
         get_env(num_moduli, fastmode);
 
         size_t wsize = gemmul8::workSize(m, n, k, num_moduli);
-        // void *work   = nullptr;
-        // if (wsize > 0) cudaMalloc(&work, wsize);
-        void *work = get_work(wsize);
+        // void *work = get_work(wsize);
+        void *work            = nullptr;
+        cublasStatus_t status = get_work(wsize, &work);
+        if (status != CUBLAS_STATUS_SUCCESS) {
+            return status;
+        }
 
         double one_d = 1.0, zero_d = 0.0;
         const double *alpha_d = alpha ? static_cast<const double *>(alpha) : &one_d;
@@ -278,7 +301,6 @@ extern "C" cublasStatus_t cublasGemmEx(cublasHandle_t handle,
                               fastmode,
                               work);
 
-        // if (work) cudaFree(work);
         return CUBLAS_STATUS_SUCCESS;
     }
 

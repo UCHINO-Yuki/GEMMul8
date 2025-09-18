@@ -29,12 +29,12 @@ size_t workSize(const size_t m,            // Number of rows of C
 {
     const size_t lda8i     = ((k + 15) >> 4) << 4; // multiple of 16
     const size_t ldb8i     = lda8i;
-    const size_t m_pad     = ((m + 3) >> 2) << 2; // multiple of 4
+    const size_t m_pad     = ((m + 15) >> 4) << 4; // multiple of 16
     const size_t sizeA     = lda8i * m_pad;
     const size_t sizeB     = ldb8i * n;
-    const size_t sizeC     = ((m_pad * n + 15) >> 4) << 4; // multiple of 16
-    const size_t size_vecA = (((m + 15) >> 4) << 4);       // multiple of 16
-    const size_t size_vecB = (((n + 15) >> 4) << 4);       // multiple of 16
+    const size_t sizeC     = m_pad * n;              //((m_pad * n + 15) >> 4) << 4; // multiple of 16
+    const size_t size_vecA = m_pad;                  //(((m + 15) >> 4) << 4); // multiple of 16
+    const size_t size_vecB = (((n + 15) >> 4) << 4); // multiple of 16
 
     size_t total_size = 0;
     total_size += sizeof(int8_t) * (sizeA + sizeB) * num_moduli;
@@ -75,11 +75,11 @@ std::vector<double> gemm<double>(cublasHandle_t handle,        // Handle to the 
     //------------------------------
     const size_t lda8i       = ((k + 15) >> 4) << 4; // multiple of 16
     const size_t ldb8i       = lda8i;
-    const size_t m_pad       = ((m + 3) >> 2) << 2; // multiple of 4
+    const size_t m_pad       = ((m + 15) >> 4) << 4; // multiple of 16
     const size_t sizeA       = lda8i * m_pad;
     const size_t sizeB       = ldb8i * n;
-    const size_t sizeC       = ((m_pad * n + 15) >> 4) << 4; // multiple of 16
-    const size_t size_vecA   = (((m + 15) >> 4) << 4);       // multiple of 16
+    const size_t sizeC       = m_pad * n; //((m_pad * n + 15) >> 4) << 4; // multiple of 16
+    const size_t size_vecA   = m_pad;     //(((m + 15) >> 4) << 4);       // multiple of 16
     const unsigned table_idx = num_moduli - 2;
     const unsigned numM      = oz2_table::numM[table_idx]; // numM <= 2
     const bool is_numM_1     = numM == 1;
@@ -229,11 +229,11 @@ std::vector<double> gemm<float>(cublasHandle_t handle,        // Handle to the c
     //------------------------------
     const size_t lda8i       = ((k + 15) >> 4) << 4; // multiple of 16
     const size_t ldb8i       = lda8i;
-    const size_t m_pad       = ((m + 3) >> 2) << 2; // multiple of 4
+    const size_t m_pad       = ((m + 15) >> 4) << 4; // multiple of 16
     const size_t sizeA       = lda8i * m_pad;
     const size_t sizeB       = ldb8i * n;
-    const size_t sizeC       = ((m_pad * n + 15) >> 4) << 4; // multiple of 16
-    const size_t size_vecA   = (((m + 15) >> 4) << 4);       // multiple of 16
+    const size_t sizeC       = m_pad * n; //((m_pad * n + 15) >> 4) << 4; // multiple of 16
+    const size_t size_vecA   = m_pad;     //(((m + 15) >> 4) << 4);       // multiple of 16
     const unsigned table_idx = num_moduli - 2;
     constexpr int32_t one    = 1;
     constexpr int32_t zero   = 0;

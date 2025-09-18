@@ -4,22 +4,6 @@
 
 namespace oz2_util {
 
-namespace {
-
-template <typename T> __forceinline__ __device__ T Tcast(double in);
-template <> __forceinline__ __device__ double Tcast<double>(double in) { return in; };
-template <> __forceinline__ __device__ float Tcast<float>(double in) { return __double2float_rn(in); };
-
-template <typename T> __forceinline__ __device__ T Tfma(const T in1, T in2, T in3);
-template <> __forceinline__ __device__ double Tfma<double>(const double in1, double in2, double in3) {
-    return fma(in1, in2, in3);
-};
-template <> __forceinline__ __device__ float Tfma<float>(const float in1, float in2, float in3) {
-    return __fmaf_rn(in1, in2, in3);
-};
-
-} // namespace
-
 // C := C64f - round(C64f/M)*M
 // C := diag(2^sftA) * C * diag(2^sftB)
 template <typename T>
@@ -478,7 +462,7 @@ __inline__ void inverse_scaling(const bool is_numM_1,
         if (alpha == 1.0) {
             if (beta == 0.0) {
                 inverse_scaling_2_10<<<oz2_const::grids_invscaling, oz2_const::threads_invscaling>>>(num_moduli, m, sizeC, incC8u, C8u, ldc8u, C, ldc, invM, M1, M2, sftA, sftB);
-            } else if (beta == 1) {
+            } else if (beta == 1.0) {
                 inverse_scaling_2_11<<<oz2_const::grids_invscaling, oz2_const::threads_invscaling>>>(num_moduli, m, sizeC, incC8u, C8u, ldc8u, C, ldc, invM, M1, M2, sftA, sftB);
             } else {
                 inverse_scaling_2_1b<<<oz2_const::grids_invscaling, oz2_const::threads_invscaling>>>(beta, num_moduli, m, sizeC, incC8u, C8u, ldc8u, C, ldc, invM, M1, M2, sftA, sftB);

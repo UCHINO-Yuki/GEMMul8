@@ -32,19 +32,6 @@ __global__ void conv_32i_2_8u_not256_kernel(const size_t sizeC,                 
 
     int4 in = reinterpret_cast<const int4 *>(C32i)[idx];
 
-    // in.x -= __mulhi(in.x, invm) * modulus;
-    // in.x -= (in.x >= modulus) * modulus;
-    // in.x += (in.x < 0) * modulus;
-    // in.y -= __mulhi(in.y, invm) * modulus;
-    // in.y -= (in.y >= modulus) * modulus;
-    // in.y += (in.y < 0) * modulus;
-    // in.z -= __mulhi(in.z, invm) * modulus;
-    // in.z -= (in.z >= modulus) * modulus;
-    // in.z += (in.z < 0) * modulus;
-    // in.w -= __mulhi(in.w, invm) * modulus;
-    // in.w -= (in.w >= modulus) * modulus;
-    // in.w += (in.w < 0) * modulus;
-
     const int32_t q0 = __mulhi(in.x, invm);
     const int32_t q1 = __mulhi(in.y, invm);
     const int32_t q2 = __mulhi(in.z, invm);

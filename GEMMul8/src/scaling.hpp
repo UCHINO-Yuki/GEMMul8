@@ -4,414 +4,6 @@
 
 namespace oz2_util {
 
-namespace {
-
-template <typename T>
-struct Vec4 {
-    T x, y, z, w;
-};
-
-template <typename T> __forceinline__ __device__ T Tabs(T in);
-template <> __forceinline__ __device__ double Tabs<double>(double in) { return fabs(in); };
-template <> __forceinline__ __device__ float Tabs<float>(float in) { return fabsf(in); };
-template <> __forceinline__ __device__ int32_t Tabs<int32_t>(int32_t in) { return abs(in); };
-
-// template <typename T> __forceinline__ __device__ int __T2int_ru(T in);
-// template <> __forceinline__ __device__ int __T2int_ru<double>(double in) { return __double2int_ru(in); };
-// template <> __forceinline__ __device__ int __T2int_ru<float>(float in) { return __float2int_ru(in); };
-
-// template <typename T> __forceinline__ __device__ T Tscalbn(T in, const int sft);
-// template <> __forceinline__ __device__ double Tscalbn<double>(double in, const int sft) { return scalbn(in, sft); };
-// template <> __forceinline__ __device__ float Tscalbn<float>(float in, const int sft) { return scalbnf(in, sft); };
-
-// template <typename T> __forceinline__ __device__ T Ttrunc(T in);
-// template <> __forceinline__ __device__ double Ttrunc<double>(double in) { return trunc(in); };
-// template <> __forceinline__ __device__ float Ttrunc<float>(float in) { return truncf(in); };
-
-template <typename T> __forceinline__ __device__ int Tilogb(T in);
-template <> __forceinline__ __device__ int Tilogb<double>(double in) { return (in == 0.0) ? 0 : ilogb(in); };
-template <> __forceinline__ __device__ int Tilogb<float>(float in) { return (in == 0.0F) ? 0 : ilogbf(in); };
-
-template <typename T> __forceinline__ __device__ T Tzero() { return 0; };
-template <> __forceinline__ __device__ double Tzero<double>() { return 0.0; };
-template <> __forceinline__ __device__ float Tzero<float>() { return 0.0F; };
-template <> __forceinline__ __device__ int32_t Tzero<int32_t>() { return 0; };
-
-template <typename T> __forceinline__ __device__ T __Tfma_ru(T in1, T in2, T in3);
-template <> __forceinline__ __device__ double __Tfma_ru<double>(double in1, double in2, double in3) { return __fma_ru(in1, in2, in3); };
-template <> __forceinline__ __device__ float __Tfma_ru<float>(float in1, float in2, float in3) { return __fmaf_ru(in1, in2, in3); };
-
-//==========================
-// trunc(scalbn(in,sft))
-//==========================
-template <typename T> __forceinline__ __device__ T T2int_fp(T in, const int sft);
-template <>
-__forceinline__ __device__ double T2int_fp<double>(double in, const int sft) {
-    int64_t bits                = __double_as_longlong(in);
-    const int64_t sign          = bits & 0x8000000000000000LL;
-    const int exp_raw           = (int)((bits >> 52) & 0x7FF);
-    const int64_t mantissa_bits = bits & 0x000FFFFFFFFFFFFFULL;
-
-    if (exp_raw != 0) {
-        int final_exp = exp_raw + sft;
-        if (final_exp < 1023) {
-            return __longlong_as_double(sign);
-        }
-        if (final_exp >= 1075) {
-            bits = sign | (int64_t)final_exp << 52 | mantissa_bits;
-            return __longlong_as_double(bits);
-        }
-
-        const int64_t mantissa_full  = mantissa_bits | (1LL << 52);
-        const int chop_bits          = 1075 - final_exp;
-        const int64_t mask           = -1LL << chop_bits;
-        const int64_t final_mantissa = (mantissa_full & mask) & 0x000FFFFFFFFFFFFFULL;
-
-        bits = sign | (int64_t)final_exp << 52 | final_mantissa;
-        return __longlong_as_double(bits);
-    }
-
-    if (mantissa_bits == 0) {
-        return in;
-    }
-
-    const int lz = 12 - __clzll(mantissa_bits);
-    int e        = lz + sft;
-
-    if (e < 1023) {
-        return __longlong_as_double(sign);
-    }
-
-    const int64_t frac_full = (mantissa_bits << (2 - lz)) ^ (1LL << 52);
-    const int64_t mask      = -1LL << max(1075 - e, 0);
-
-    bits = sign | (int64_t)e << 52 | (frac_full & mask);
-    return __longlong_as_double(bits);
-}
-template <>
-__forceinline__ __device__ float T2int_fp<float>(float in, const int sft) {
-    int32_t bits                = __float_as_int(in);
-    const int32_t sign          = bits & 0x80000000;
-    const int exp_raw           = (bits >> 23) & 0xFF;
-    const int32_t mantissa_bits = bits & 0x007FFFFF;
-
-    if (exp_raw != 0) {
-        int final_exp = exp_raw + sft;
-        if (final_exp < 127) {
-            return __int_as_float(sign);
-        }
-        if (final_exp >= 150) {
-            bits = sign | final_exp << 23 | mantissa_bits;
-            return __int_as_float(bits);
-        }
-
-        const int32_t mantissa_full  = mantissa_bits | (1 << 23);
-        const int chop_bits          = 150 - final_exp;
-        const int32_t mask           = -1 << chop_bits;
-        const int32_t final_mantissa = (mantissa_full & mask) & 0x007FFFFF;
-
-        bits = sign | final_exp << 23 | final_mantissa;
-        return __int_as_float(bits);
-    }
-
-    if (mantissa_bits == 0) {
-        return in;
-    }
-
-    const int lz = 9 - __clz(mantissa_bits);
-    int e        = lz + sft;
-
-    if (e < 127) {
-        return __int_as_float(sign);
-    }
-
-    const int32_t frac_full = (mantissa_bits << (2 - lz)) ^ (1 << 23);
-    const int32_t mask      = -1 << max(150 - e, 0);
-
-    bits = sign | e << 23 | (frac_full & mask);
-    return __int_as_float(bits);
-}
-// template <> __forceinline__ __device__ double T2int_fp<double>(double in, const int sft) {
-//     int64_t bits = __double_as_longlong(in);
-//     int64_t sign = bits & 0x8000000000000000LL;
-//     int exp_raw  = (int)((bits >> 52) & 0x7FF);
-//     bits &= ((1ULL << 52) - 1);
-
-//     int is_sub = (exp_raw == 0);
-//     int lz     = 12 - __clzll(bits);
-//     int e      = is_sub ? lz : exp_raw;
-//     e += sft;
-
-//     int64_t frac_full = is_sub ? (bits << (2 - lz)) ^ (1LL << 52) : bits;
-//     int64_t mask      = -1LL << max(1075 - e, 0);
-
-//     bits            = sign | int64_t(e) << 52 | (frac_full & mask);
-//     int64_t out_exp = (e < 1023) ? sign : bits;
-//     return __longlong_as_double(out_exp);
-// }
-// template <> __forceinline__ __device__ float T2int_fp<float>(float in, const int sft) {
-//     int bits    = __float_as_int(in);
-//     int sign    = bits & 0x80000000;
-//     int exp_raw = (bits >> 23) & 0xFF;
-//     bits &= (1 << 23) - 1;
-
-//     int is_sub = (exp_raw == 0);
-//     int lz     = 9 - __clz(bits);
-//     int e      = is_sub ? lz : exp_raw;
-//     e += sft;
-
-//     int frac_full = is_sub ? (bits << (2 - lz)) ^ (1 << 23) : bits;
-//     int mask      = -1 << max(150 - e, 0);
-
-//     bits        = sign | (e << 23) | (frac_full & mask);
-//     int out_exp = (e < 127) ? sign : bits;
-//     return __int_as_float(out_exp);
-// }
-
-//==========================
-// int8_t(ceil(scalbn(fabs(in),sft)))
-//==========================
-template <typename T> __forceinline__ __device__ int8_t T2int8i(T in, const int sft);
-template <> __forceinline__ __device__ int8_t T2int8i<double>(double in, const int sft) {
-    int64_t bits_full           = __double_as_longlong(in);
-    const int exp_biased        = (int)((bits_full >> 52) & 0x7FF);
-    const int64_t mantissa_bits = bits_full & 0x000FFFFFFFFFFFFFULL;
-    int64_t result;
-
-    if (exp_biased != 0) {
-        const int64_t mantissa_full = mantissa_bits | (1LL << 52);
-        const int shift_amount      = 1075 - exp_biased - sft;
-
-        const int64_t divisor = 1LL << shift_amount;
-        result                = (mantissa_full + divisor - 1) >> shift_amount;
-        return static_cast<int8_t>(result);
-    }
-
-    if (mantissa_bits == 0) {
-        return static_cast<int8_t>(0);
-    }
-
-    const int numzero           = 12 - __clzll(mantissa_bits);
-    const int64_t mantissa_full = mantissa_bits << (2 - numzero);
-    const int shift_amount      = 1075 - numzero - sft;
-
-    const int64_t divisor = 1LL << shift_amount;
-    result                = (mantissa_full + divisor - 1) >> shift_amount;
-    return static_cast<int8_t>(result);
-}
-template <> __forceinline__ __device__ int8_t T2int8i<float>(float in, const int sft) {
-    int32_t bits_full           = __float_as_int(in);
-    const int exp_biased        = (bits_full >> 23) & 0xFF;
-    const int32_t mantissa_bits = bits_full & 0x007FFFFFU;
-    int32_t result;
-
-    if (exp_biased != 0) {
-        const int32_t mantissa_full = mantissa_bits | (1 << 23);
-        const int shift_amount      = 150 - exp_biased - sft;
-
-        const int32_t divisor = 1 << shift_amount;
-        result                = (mantissa_full + divisor - 1) >> shift_amount;
-        return static_cast<int8_t>(result);
-    }
-
-    if (mantissa_bits == 0) {
-        return static_cast<int8_t>(0);
-    }
-
-    const int numzero           = 9 - __clz(mantissa_bits);
-    const int32_t mantissa_full = mantissa_bits << (2 - numzero);
-    const int shift_amount      = 150 - numzero - sft;
-
-    const int32_t divisor = 1 << shift_amount;
-    result                = (mantissa_full + divisor - 1) >> shift_amount;
-    return static_cast<int8_t>(result);
-}
-
-// template <> __forceinline__ __device__ int8_t T2int8i<double>(double in, const int sft) {
-//     int64_t bits = __double_as_longlong(in);
-//     int exp      = (int)((bits >> 52) & 0x7FF);
-//     bits &= ((1LL << 52) - 1);
-//     int is_sub = (exp == 0);
-
-//     int numzero      = (is_sub) ? (12 - __clzll(bits)) : 0;
-//     int e            = (is_sub) ? numzero : exp;
-//     exp              = 1075 - e - sft;
-//     int64_t mantissa = (is_sub) ? (bits << (2 - numzero)) : (bits | (1LL << 52));
-
-//     bits           = 1LL << exp;
-//     int64_t result = (mantissa + bits - 1) >> exp;
-//     return static_cast<int8_t>(result);
-// }
-// template <> __forceinline__ __device__ int8_t T2int8i<float>(float in, const int sft) {
-//     int bits = __float_as_int(in);
-//     int exp  = (int)((bits >> 23) & 0xFF);
-//     bits &= ((1 << 23) - 1);
-//     int is_sub = (exp == 0);
-
-//     int numzero  = (is_sub) ? (9 - __clz(bits)) : 0;
-//     int e        = (is_sub) ? numzero : exp;
-//     exp          = 150 - e - sft;
-//     int mantissa = (is_sub) ? (bits << (2 - numzero)) : (bits | (1 << 23));
-
-//     bits = 1 << exp;
-//     exp  = (mantissa + bits - 1) >> exp;
-//     return static_cast<int8_t>(exp);
-// }
-
-template <typename T> __forceinline__ __device__ void inner_warp_max(T &amax) {
-    amax = max(amax, __shfl_down_sync(0xFFFFFFFFu, amax, 16)); // warp-level reduction
-    amax = max(amax, __shfl_down_sync(0xFFFFFFFFu, amax, 8));  // warp-level reduction
-    amax = max(amax, __shfl_down_sync(0xFFFFFFFFu, amax, 4));  // warp-level reduction
-    amax = max(amax, __shfl_down_sync(0xFFFFFFFFu, amax, 2));  // warp-level reduction
-    amax = max(amax, __shfl_down_sync(0xFFFFFFFFu, amax, 1));  // warp-level reduction
-}
-
-template <typename T> __forceinline__ __device__ void inner_warp_sum(T &sum);
-template <> __forceinline__ __device__ void inner_warp_sum<double>(double &sum) {
-    sum = __dadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 16)); // warp-level reduction
-    sum = __dadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 8));  // warp-level reduction
-    sum = __dadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 4));  // warp-level reduction
-    sum = __dadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 2));  // warp-level reduction
-    sum = __dadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 1));  // warp-level reduction
-}
-template <> __forceinline__ __device__ void inner_warp_sum<float>(float &sum) {
-    sum = __fadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 16)); // warp-level reduction
-    sum = __fadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 8));  // warp-level reduction
-    sum = __fadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 4));  // warp-level reduction
-    sum = __fadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 2));  // warp-level reduction
-    sum = __fadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, 1));  // warp-level reduction
-}
-template <> __forceinline__ __device__ void inner_warp_sum<int32_t>(int32_t &sum) {
-    sum += __shfl_down_sync(0xFFFFFFFFu, sum, 16); // warp-level reduction
-    sum += __shfl_down_sync(0xFFFFFFFFu, sum, 8);  // warp-level reduction
-    sum += __shfl_down_sync(0xFFFFFFFFu, sum, 4);  // warp-level reduction
-    sum += __shfl_down_sync(0xFFFFFFFFu, sum, 2);  // warp-level reduction
-    sum += __shfl_down_sync(0xFFFFFFFFu, sum, 1);  // warp-level reduction
-}
-
-// return max(abs(ptr[0:inc:length-1]))
-template <typename T>
-__device__ T find_amax(const T *const ptr,    //
-                       const unsigned length, //
-                       const unsigned inc,    // leading dimension
-                       T *shm)                // shared memory (workspace)
-{
-    // max in thread
-    T amax = Tzero<T>();
-    for (unsigned i = threadIdx.x; i < length; i += blockDim.x) {
-        T tmp = Tabs<T>(ptr[i * inc]);
-        amax  = max(amax, tmp);
-    }
-
-    // inner-warp reduction
-    inner_warp_max<T>(amax);
-
-    // inner-threadblock reduction
-    if ((threadIdx.x & 0x1f) == 0) shm[threadIdx.x >> 5] = amax; // shm[warp-id] = max in warp
-
-    __syncthreads();
-    amax = Tzero<T>();
-    if (threadIdx.x < 32) {
-        if (threadIdx.x < (blockDim.x >> 5)) amax = shm[threadIdx.x];
-        inner_warp_max<T>(amax);
-        if (threadIdx.x == 0) shm[0] = amax;
-    }
-
-    __syncthreads();
-    return shm[0];
-}
-
-// return max(abs(ptr[0:inc:length-1])) and sum_{i=0}^{length-1}(ptr[i]^2)
-template <typename T>
-__device__ T find_amax_and_nrm(const T *const ptr,    //
-                               const unsigned length, //
-                               const unsigned inc,    // leading dimension
-                               T *shm,                // shared memory (workspace)
-                               T &vecnrm)             // 2-norm^2
-{
-    T *shm1 = shm;
-    T *shm2 = shm + 32;
-
-    // max in thread
-    T amax = Tzero<T>();
-    T sum  = Tzero<T>();
-    for (unsigned i = threadIdx.x; i < length; i += blockDim.x) {
-        T tmp = Tabs<T>(ptr[i * inc]);
-        amax  = max(amax, tmp);
-        sum   = __Tfma_ru<T>(tmp, tmp, sum); // round-up mode
-    }
-
-    // inner-warp reduction
-    inner_warp_max<T>(amax);
-    inner_warp_sum<T>(sum);
-
-    // inner-threadblock reduction
-    const auto id = (threadIdx.x & 0x1f);
-    if (id == 0) {
-        shm1[threadIdx.x >> 5] = amax; // shm[warp-id] = max in warp
-    } else if (id == 1) {
-        shm2[(threadIdx.x - 1) >> 5] = sum; // shm[warp-id] = sum in warp
-    }
-
-    __syncthreads();
-    amax = Tzero<T>();
-    sum  = Tzero<T>();
-    if (threadIdx.x < 32) {
-        if (threadIdx.x < (blockDim.x >> 5)) amax = shm1[threadIdx.x];
-        inner_warp_max<T>(amax);
-        if (threadIdx.x == 0) shm1[0] = amax;
-    } else if (threadIdx.x < 64) {
-        if ((threadIdx.x - 32) < (blockDim.x >> 5)) sum = shm[threadIdx.x];
-        inner_warp_sum<T>(sum);
-        if (threadIdx.x == 32) shm2[0] = sum;
-    }
-
-    __syncthreads();
-    vecnrm = shm2[0];
-    return shm[0];
-}
-
-// calculate mod: a - round(a/p(j))*p(j)
-template <typename T, int MODE> __device__ __forceinline__ int8_t mod_8i(T a, unsigned j);
-template <> __device__ __forceinline__ int8_t mod_8i<double, 1>(double a, unsigned j) {
-    const auto val = oz2_table::moduli_dev[j];
-    double tmp1    = fma(rint(a * val.y), val.x, a);
-    return static_cast<int8_t>(tmp1);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<float, 1>(float a, unsigned j) {
-    const auto val = oz2_table::modulif_dev[j];
-    float tmp1     = __fmaf_rn(rintf(a * val.y), val.x, a);
-    return static_cast<int8_t>(tmp1);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<double, 2>(double a, unsigned j) {
-    const auto val = oz2_table::moduli_dev[j];
-    float tmp1     = __double2float_rn(fma(rint(a * val.y), val.x, a));
-    float tmp2     = __fmaf_rn(rintf(tmp1 * val.w), val.z, tmp1);
-    return static_cast<int8_t>(tmp2);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<float, 2>(float a, unsigned j) {
-    const auto val = oz2_table::modulif_dev[j];
-    float tmp1     = __fmaf_rn(rintf(a * val.y), val.x, a);
-    float tmp2     = __fmaf_rn(rintf(tmp1 * val.y), val.x, tmp1);
-    return static_cast<int8_t>(tmp2);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<double, 3>(double a, unsigned j) {
-    const auto val = oz2_table::moduli_dev[j];
-    float tmp1     = __double2float_rn(fma(rint(a * val.y), val.x, a));
-    float tmp2     = __fmaf_rn(rintf(tmp1 * val.w), val.z, tmp1);
-    float tmp3     = __fmaf_rn(rintf(tmp2 * val.w), val.z, tmp2);
-    return static_cast<int8_t>(tmp3);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<float, 3>(float a, unsigned j) {
-    const auto val = oz2_table::modulif_dev[j];
-    float tmp1     = __fmaf_rn(rintf(a * val.y), val.x, a);
-    float tmp2     = __fmaf_rn(rintf(tmp1 * val.y), val.x, tmp1);
-    float tmp3     = __fmaf_rn(rintf(tmp2 * val.y), val.x, tmp2);
-    return static_cast<int8_t>(tmp3);
-}
-
-} // namespace
-
 namespace int8tc {
 
 __forceinline__ __device__ int compute_sft(int amax, int16_t sftA, const float log2M) {
@@ -445,10 +37,6 @@ __global__ void extract_A8i_kernel(const size_t k,                   // size(A,2
         char4 out4;
         unsigned idx = i << 2;
 
-        // out4.x = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx * lda]), sft));
-        // out4.y = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 1) * lda]), sft));
-        // out4.z = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 2) * lda]), sft));
-        // out4.w = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 3) * lda]), sft));
         out4.x = T2int8i<T>(in[idx * lda], sft);
         out4.y = T2int8i<T>(in[(idx + 1) * lda], sft);
         out4.z = T2int8i<T>(in[(idx + 2) * lda], sft);
@@ -461,10 +49,6 @@ __global__ void extract_A8i_kernel(const size_t k,                   // size(A,2
         char4 out4;
         unsigned idx = i << 2;
 
-        // out4.x = (idx < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx * lda]), sft)) : 0;
-        // out4.y = (idx + 1 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 1) * lda]), sft)) : 0;
-        // out4.z = (idx + 2 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 2) * lda]), sft)) : 0;
-        // out4.w = (idx + 3 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[(idx + 3) * lda]), sft)) : 0;
         out4.x = (idx < k) ? T2int8i<T>(in[idx * lda], sft) : 0;
         out4.y = (idx + 1 < k) ? T2int8i<T>(in[(idx + 1) * lda], sft) : 0;
         out4.z = (idx + 2 < k) ? T2int8i<T>(in[(idx + 2) * lda], sft) : 0;
@@ -501,10 +85,7 @@ __global__ void extract_B8i_kernel(const size_t k,                   // size(B,1
         unsigned idx = i << 2;
 
         Vec4<T> in4 = *reinterpret_cast<const Vec4<T> *>(in + idx);
-        // out4.x      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.x), sft));
-        // out4.y      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.y), sft));
-        // out4.z      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.z), sft));
-        // out4.w      = __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in4.w), sft));
+
         out4.x = T2int8i<T>(in4.x, sft);
         out4.y = T2int8i<T>(in4.y, sft);
         out4.z = T2int8i<T>(in4.z, sft);
@@ -517,10 +98,6 @@ __global__ void extract_B8i_kernel(const size_t k,                   // size(B,1
         char4 out4;
         unsigned idx = i << 2;
 
-        // out4.x = (idx < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx]), sft)) : 0;
-        // out4.y = (idx + 1 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx + 1]), sft)) : 0;
-        // out4.z = (idx + 2 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx + 2]), sft)) : 0;
-        // out4.w = (idx + 3 < k) ? __T2int_ru<T>(Tscalbn<T>(Tabs<T>(in[idx + 3]), sft)) : 0;
         out4.x = (idx < k) ? T2int8i<T>(in[idx], sft) : 0;
         out4.y = (idx < k) ? T2int8i<T>(in[idx + 1], sft) : 0;
         out4.z = (idx < k) ? T2int8i<T>(in[idx + 2], sft) : 0;
@@ -560,10 +137,6 @@ __global__ void scalingA_kernel(const size_t n,                         // size(
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        // in4.x = Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft));
-        // in4.y = Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft));
-        // in4.z = Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft));
-        // in4.w = Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft));
         in4.x = T2int_fp<T>(in[idx * lda], sft);
         in4.y = T2int_fp<T>(in[(idx + 1) * lda], sft);
         in4.z = T2int_fp<T>(in[(idx + 2) * lda], sft);
@@ -571,11 +144,12 @@ __global__ void scalingA_kernel(const size_t n,                         // size(
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = mod_8i<T, MODE>(in4.x, j);
-            out4.y = mod_8i<T, MODE>(in4.y, j);
-            out4.z = mod_8i<T, MODE>(in4.z, j);
-            out4.w = mod_8i<T, MODE>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, val);
+            out4.y = mod_8i<T, MODE>(in4.y, val);
+            out4.z = mod_8i<T, MODE>(in4.z, val);
+            out4.w = mod_8i<T, MODE>(in4.w, val);
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
@@ -585,10 +159,6 @@ __global__ void scalingA_kernel(const size_t n,                         // size(
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft)) : 0;
-        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft)) : 0;
-        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft)) : 0;
-        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft)) : 0;
         in4.x = (idx < k) ? T2int_fp<T>(in[idx * lda], sft) : 0;
         in4.y = (idx + 1 < k) ? T2int_fp<T>(in[(idx + 1) * lda], sft) : 0;
         in4.z = (idx + 2 < k) ? T2int_fp<T>(in[(idx + 2) * lda], sft) : 0;
@@ -596,11 +166,12 @@ __global__ void scalingA_kernel(const size_t n,                         // size(
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, val) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, val) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, val) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, val) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
@@ -641,10 +212,7 @@ __global__ void scalingB_kernel(const size_t m,                         // size(
         unsigned idx = i << 2;
 
         Vec4<T> in4 = *reinterpret_cast<const Vec4<T> *>(in + idx);
-        // in4.x       = Ttrunc<T>(Tscalbn<T>(in4.x, sft));
-        // in4.y       = Ttrunc<T>(Tscalbn<T>(in4.y, sft));
-        // in4.z       = Ttrunc<T>(Tscalbn<T>(in4.z, sft));
-        // in4.w       = Ttrunc<T>(Tscalbn<T>(in4.w, sft));
+
         in4.x = T2int_fp<T>(in4.x, sft);
         in4.y = T2int_fp<T>(in4.y, sft);
         in4.z = T2int_fp<T>(in4.z, sft);
@@ -652,11 +220,12 @@ __global__ void scalingB_kernel(const size_t m,                         // size(
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = mod_8i<T, MODE>(in4.x, j);
-            out4.y = mod_8i<T, MODE>(in4.y, j);
-            out4.z = mod_8i<T, MODE>(in4.z, j);
-            out4.w = mod_8i<T, MODE>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, val);
+            out4.y = mod_8i<T, MODE>(in4.y, val);
+            out4.z = mod_8i<T, MODE>(in4.z, val);
+            out4.w = mod_8i<T, MODE>(in4.w, val);
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
@@ -666,10 +235,6 @@ __global__ void scalingB_kernel(const size_t m,                         // size(
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx], sft)) : 0;
-        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 1], sft)) : 0;
-        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 2], sft)) : 0;
-        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 3], sft)) : 0;
         in4.x = (idx < k) ? T2int_fp<T>(in[idx], sft) : 0;
         in4.y = (idx + 1 < k) ? T2int_fp<T>(in[idx + 1], sft) : 0;
         in4.z = (idx + 2 < k) ? T2int_fp<T>(in[idx + 2], sft) : 0;
@@ -677,11 +242,12 @@ __global__ void scalingB_kernel(const size_t m,                         // size(
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, val) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, val) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, val) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, val) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
@@ -722,10 +288,7 @@ __global__ void scalingAT_kernel(const size_t n,                         // size
         unsigned idx = i << 2;
 
         Vec4<T> in4 = *reinterpret_cast<const Vec4<T> *>(in + idx);
-        // in4.x       = Ttrunc<T>(Tscalbn<T>(in4.x, sft));
-        // in4.y       = Ttrunc<T>(Tscalbn<T>(in4.y, sft));
-        // in4.z       = Ttrunc<T>(Tscalbn<T>(in4.z, sft));
-        // in4.w       = Ttrunc<T>(Tscalbn<T>(in4.w, sft));
+
         in4.x = T2int_fp<T>(in4.x, sft);
         in4.y = T2int_fp<T>(in4.y, sft);
         in4.z = T2int_fp<T>(in4.z, sft);
@@ -733,11 +296,12 @@ __global__ void scalingAT_kernel(const size_t n,                         // size
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = mod_8i<T, MODE>(in4.x, j);
-            out4.y = mod_8i<T, MODE>(in4.y, j);
-            out4.z = mod_8i<T, MODE>(in4.z, j);
-            out4.w = mod_8i<T, MODE>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, val);
+            out4.y = mod_8i<T, MODE>(in4.y, val);
+            out4.z = mod_8i<T, MODE>(in4.z, val);
+            out4.w = mod_8i<T, MODE>(in4.w, val);
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
@@ -747,10 +311,6 @@ __global__ void scalingAT_kernel(const size_t n,                         // size
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx], sft)) : 0;
-        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 1], sft)) : 0;
-        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 2], sft)) : 0;
-        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 3], sft)) : 0;
         in4.x = (idx < k) ? T2int_fp<T>(in[idx], sft) : 0;
         in4.y = (idx + 1 < k) ? T2int_fp<T>(in[idx + 1], sft) : 0;
         in4.z = (idx + 2 < k) ? T2int_fp<T>(in[idx + 2], sft) : 0;
@@ -758,11 +318,12 @@ __global__ void scalingAT_kernel(const size_t n,                         // size
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, val) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, val) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, val) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, val) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
@@ -803,10 +364,6 @@ __global__ void scalingBT_kernel(const size_t m,                         // size
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        // in4.x = Ttrunc<T>(Tscalbn<T>(in[idx * ldb], sft));
-        // in4.y = Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * ldb], sft));
-        // in4.z = Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * ldb], sft));
-        // in4.w = Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * ldb], sft));
         in4.x = T2int_fp<T>(in[idx * ldb], sft);
         in4.y = T2int_fp<T>(in[(idx + 1) * ldb], sft);
         in4.z = T2int_fp<T>(in[(idx + 2) * ldb], sft);
@@ -814,11 +371,12 @@ __global__ void scalingBT_kernel(const size_t m,                         // size
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = mod_8i<T, MODE>(in4.x, j);
-            out4.y = mod_8i<T, MODE>(in4.y, j);
-            out4.z = mod_8i<T, MODE>(in4.z, j);
-            out4.w = mod_8i<T, MODE>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, val);
+            out4.y = mod_8i<T, MODE>(in4.y, val);
+            out4.z = mod_8i<T, MODE>(in4.z, val);
+            out4.w = mod_8i<T, MODE>(in4.w, val);
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
@@ -828,10 +386,6 @@ __global__ void scalingBT_kernel(const size_t m,                         // size
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx * ldb], sft)) : 0;
-        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * ldb], sft)) : 0;
-        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * ldb], sft)) : 0;
-        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * ldb], sft)) : 0;
         in4.x = (idx < k) ? T2int_fp<T>(in[idx * ldb], sft) : 0;
         in4.y = (idx + 1 < k) ? T2int_fp<T>(in[(idx + 1) * ldb], sft) : 0;
         in4.z = (idx + 2 < k) ? T2int_fp<T>(in[(idx + 2) * ldb], sft) : 0;
@@ -839,11 +393,12 @@ __global__ void scalingBT_kernel(const size_t m,                         // size
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, val) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, val) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, val) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, val) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
@@ -1022,10 +577,6 @@ __global__ void scalingA_kernel(const size_t k,                   // size(A,2)
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        // in4.x = Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft));
-        // in4.y = Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft));
-        // in4.z = Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft));
-        // in4.w = Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft));
         in4.x = T2int_fp<T>(in[idx * lda], sft);
         in4.y = T2int_fp<T>(in[(idx + 1) * lda], sft);
         in4.z = T2int_fp<T>(in[(idx + 2) * lda], sft);
@@ -1033,11 +584,12 @@ __global__ void scalingA_kernel(const size_t k,                   // size(A,2)
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = mod_8i<T, MODE>(in4.x, j);
-            out4.y = mod_8i<T, MODE>(in4.y, j);
-            out4.z = mod_8i<T, MODE>(in4.z, j);
-            out4.w = mod_8i<T, MODE>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, val);
+            out4.y = mod_8i<T, MODE>(in4.y, val);
+            out4.z = mod_8i<T, MODE>(in4.z, val);
+            out4.w = mod_8i<T, MODE>(in4.w, val);
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
@@ -1047,10 +599,6 @@ __global__ void scalingA_kernel(const size_t k,                   // size(A,2)
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx * lda], sft)) : 0;
-        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 1) * lda], sft)) : 0;
-        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 2) * lda], sft)) : 0;
-        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[(idx + 3) * lda], sft)) : 0;
         in4.x = (idx < k) ? T2int_fp<T>(in[idx * lda], sft) : 0;
         in4.y = (idx + 1 < k) ? T2int_fp<T>(in[(idx + 1) * lda], sft) : 0;
         in4.z = (idx + 2 < k) ? T2int_fp<T>(in[(idx + 2) * lda], sft) : 0;
@@ -1058,11 +606,12 @@ __global__ void scalingA_kernel(const size_t k,                   // size(A,2)
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, val) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, val) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, val) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, val) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incA8i + idx) = out4;
         }
@@ -1099,10 +648,7 @@ __global__ void scalingB_kernel(const size_t k,                   // size(B,1)
         unsigned idx = i << 2;
 
         Vec4<T> in4 = *reinterpret_cast<const Vec4<T> *>(in + idx);
-        // in4.x       = Ttrunc<T>(Tscalbn<T>(in4.x, sft));
-        // in4.y       = Ttrunc<T>(Tscalbn<T>(in4.y, sft));
-        // in4.z       = Ttrunc<T>(Tscalbn<T>(in4.z, sft));
-        // in4.w       = Ttrunc<T>(Tscalbn<T>(in4.w, sft));
+
         in4.x = T2int_fp<T>(in4.x, sft);
         in4.y = T2int_fp<T>(in4.y, sft);
         in4.z = T2int_fp<T>(in4.z, sft);
@@ -1110,11 +656,12 @@ __global__ void scalingB_kernel(const size_t k,                   // size(B,1)
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = mod_8i<T, MODE>(in4.x, j);
-            out4.y = mod_8i<T, MODE>(in4.y, j);
-            out4.z = mod_8i<T, MODE>(in4.z, j);
-            out4.w = mod_8i<T, MODE>(in4.w, j);
+            out4.x = mod_8i<T, MODE>(in4.x, val);
+            out4.y = mod_8i<T, MODE>(in4.y, val);
+            out4.z = mod_8i<T, MODE>(in4.z, val);
+            out4.w = mod_8i<T, MODE>(in4.w, val);
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
@@ -1124,10 +671,6 @@ __global__ void scalingB_kernel(const size_t k,                   // size(B,1)
         unsigned idx = i << 2;
 
         Vec4<T> in4;
-        // in4.x = (idx < k) ? Ttrunc<T>(Tscalbn<T>(in[idx], sft)) : 0;
-        // in4.y = (idx + 1 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 1], sft)) : 0;
-        // in4.z = (idx + 2 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 2], sft)) : 0;
-        // in4.w = (idx + 3 < k) ? Ttrunc<T>(Tscalbn<T>(in[idx + 3], sft)) : 0;
         in4.x = (idx < k) ? T2int_fp<T>(in[idx], sft) : 0;
         in4.y = (idx + 1 < k) ? T2int_fp<T>(in[idx + 1], sft) : 0;
         in4.z = (idx + 2 < k) ? T2int_fp<T>(in[idx + 2], sft) : 0;
@@ -1135,11 +678,12 @@ __global__ void scalingB_kernel(const size_t k,                   // size(B,1)
 
         char4 out4;
         for (unsigned j = 0; j < num_moduli; ++j) {
+            const auto val = readtab<T>(j);
 
-            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, j) : 0;
-            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, j) : 0;
-            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, j) : 0;
-            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, j) : 0;
+            out4.x = (idx < k) ? mod_8i<T, MODE>(in4.x, val) : 0;
+            out4.y = (idx + 1 < k) ? mod_8i<T, MODE>(in4.y, val) : 0;
+            out4.z = (idx + 2 < k) ? mod_8i<T, MODE>(in4.z, val) : 0;
+            out4.w = (idx + 3 < k) ? mod_8i<T, MODE>(in4.w, val) : 0;
 
             *reinterpret_cast<char4 *>(out + j * incB8i + idx) = out4;
         }
