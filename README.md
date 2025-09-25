@@ -121,7 +121,7 @@ export FASTMODE_F=0
 
 - `NUM_MODULI_D` (default: `18`)
   - Specifies the number of moduli `unsigned num_moduli` used in the DGEMM emulation.
-- `NUM_MODULI_S` (default: `18`)
+- `NUM_MODULI_S` (default: `8`)
   - Specifies the number of moduli `unsigned num_moduli` used in the SGEMM emulation.
 - `FASTMODE_D` (default: `0`)
   - Enables fast mode in the DGEMM emulation. If `FASTMODE=1`, `bool fastmode = true;`, otherwise, `bool fastmode = false;`.
