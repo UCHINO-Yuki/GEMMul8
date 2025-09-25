@@ -4,6 +4,21 @@
 
 namespace oz2_util {
 
+namespace {
+__device__ __forceinline__ uint8_t mod_reduce(int32_t x,    // input
+                                              int32_t invp, // floor(2^32 / p - 1)
+                                              uint8_t p)    // modulus
+{
+    int32_t quot = __mulhi(x, invp); // the most significant 32-bit of x*invm
+    x -= quot * p;
+    int32_t ge = (x - p) >> 31;
+    int32_t lt = x >> 31;
+    x -= (ge ^ -1) & p;
+    x += lt & p;
+    return static_cast<uint8_t>(x);
+};
+} // namespace
+
 __global__ void conv_32i_2_8u_256_kernel(const size_t sizeC,                     // ((m * n + 15) >> 4) << 4; // multiple of 16
                                          const int32_t *const __restrict__ C32i, // input
                                          uint8_t *const __restrict__ C8u)        // output
@@ -32,25 +47,11 @@ __global__ void conv_32i_2_8u_not256_kernel(const size_t sizeC,                 
 
     int4 in = reinterpret_cast<const int4 *>(C32i)[idx];
 
-    const int32_t q0 = __mulhi(in.x, invm);
-    const int32_t q1 = __mulhi(in.y, invm);
-    const int32_t q2 = __mulhi(in.z, invm);
-    const int32_t q3 = __mulhi(in.w, invm);
-
-    in.x -= q0 * modulus;
-    in.y -= q1 * modulus;
-    in.z -= q2 * modulus;
-    in.w -= q3 * modulus;
-
-    in.x += (in.x >= modulus) ? -modulus : ((in.x < 0) ? modulus : 0);
-    in.y += (in.y >= modulus) ? -modulus : ((in.y < 0) ? modulus : 0);
-    in.z += (in.z >= modulus) ? -modulus : ((in.z < 0) ? modulus : 0);
-    in.w += (in.w >= modulus) ? -modulus : ((in.w < 0) ? modulus : 0);
-
-    uchar4 out{static_cast<unsigned char>(in.x),
-               static_cast<unsigned char>(in.y),
-               static_cast<unsigned char>(in.z),
-               static_cast<unsigned char>(in.w)};
+    uchar4 out;
+    out.x = mod_reduce(in.x, invm, modulus);
+    out.y = mod_reduce(in.y, invm, modulus);
+    out.z = mod_reduce(in.z, invm, modulus);
+    out.w = mod_reduce(in.w, invm, modulus);
 
     reinterpret_cast<uchar4 *>(C8u)[idx] = out;
 }

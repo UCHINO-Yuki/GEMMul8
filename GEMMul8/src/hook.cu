@@ -12,10 +12,17 @@
 // get environment variable
 // ==========================================
 namespace {
-static inline void get_env(unsigned &num_moduli, bool &fastmode) {
-    const char *nm = getenv("NUM_MODULI");
-    const char *fm = getenv("FASTMODE");
+static inline void get_env_d(unsigned &num_moduli, bool &fastmode) {
+    const char *nm = getenv("NUM_MODULI_D");
+    const char *fm = getenv("FASTMODE_D");
     num_moduli     = (nm ? std::stoi(nm) : 18);
+    fastmode       = (fm ? std::string(fm) == std::string("1") : false);
+}
+
+static inline void get_env_s(unsigned &num_moduli, bool &fastmode) {
+    const char *nm = getenv("NUM_MODULI_S");
+    const char *fm = getenv("FASTMODE_S");
+    num_moduli     = (nm ? std::stoi(nm) : 8);
     fastmode       = (fm ? std::string(fm) == std::string("1") : false);
 }
 } // namespace
@@ -90,7 +97,7 @@ extern "C" cublasStatus_t cublasSgemm_v2(cublasHandle_t handle,
 
     unsigned num_moduli;
     bool fastmode;
-    get_env(num_moduli, fastmode);
+    get_env_s(num_moduli, fastmode);
 
     size_t wsize = gemmul8::workSize(m, n, k, num_moduli);
     // void *work   = get_work(wsize);
@@ -154,7 +161,7 @@ extern "C" cublasStatus_t cublasDgemm_v2(cublasHandle_t handle,
 
     unsigned num_moduli;
     bool fastmode;
-    get_env(num_moduli, fastmode);
+    get_env_d(num_moduli, fastmode);
 
     size_t wsize = gemmul8::workSize(m, n, k, num_moduli);
     // void *work = get_work(wsize);
@@ -228,7 +235,7 @@ extern "C" cublasStatus_t cublasGemmEx(cublasHandle_t handle,
         Ctype == CUDA_R_32F) {
         unsigned num_moduli;
         bool fastmode;
-        get_env(num_moduli, fastmode);
+        get_env_s(num_moduli, fastmode);
 
         size_t wsize = gemmul8::workSize(m, n, k, num_moduli);
         // void *work = get_work(wsize);
@@ -269,7 +276,7 @@ extern "C" cublasStatus_t cublasGemmEx(cublasHandle_t handle,
         Ctype == CUDA_R_64F) {
         unsigned num_moduli;
         bool fastmode;
-        get_env(num_moduli, fastmode);
+        get_env_d(num_moduli, fastmode);
 
         size_t wsize = gemmul8::workSize(m, n, k, num_moduli);
         // void *work = get_work(wsize);

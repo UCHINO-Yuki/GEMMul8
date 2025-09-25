@@ -115,12 +115,18 @@ The library can automatically intercept calls to cuBLAS GEMM functions (cublasSg
 export LD_PRELOAD=/path/to/libgemmul8.so
 export NUM_MODULI=15
 export FASTMODE=1
+export NUM_MODULI_F=7
+export FASTMODE_F=0
 ```
 
-- `NUM_MODULI` (default: `18`)
-  - Specifies the number of moduli `unsigned num_moduli` used in the GEMM emulation.
-- `FASTMODE` (default: `0`)
-  - Enables fast mode in the GEMM emulation. If `FASTMODE=1`, `bool fastmode = true;`, otherwise, `bool fastmode = false;`.
+- `NUM_MODULI_D` (default: `18`)
+  - Specifies the number of moduli `unsigned num_moduli` used in the DGEMM emulation.
+- `NUM_MODULI_S` (default: `18`)
+  - Specifies the number of moduli `unsigned num_moduli` used in the SGEMM emulation.
+- `FASTMODE_D` (default: `0`)
+  - Enables fast mode in the DGEMM emulation. If `FASTMODE=1`, `bool fastmode = true;`, otherwise, `bool fastmode = false;`.
+- `FASTMODE_S` (default: `0`)
+  - Enables fast mode in the SGEMM emulation. If `FASTMODE_F=1`, `bool fastmode = true;`, otherwise, `bool fastmode = false;`.
 
 The hook mode works transparently: existing calls to cuBLAS GEMM will use the emulation.
 

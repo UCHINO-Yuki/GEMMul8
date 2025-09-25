@@ -455,7 +455,7 @@ __inline__ void scaling(cublasHandle_t handle,        // Handle to the cuBLAS li
     cudaDeviceSynchronize();
     const float log2M = oz2_table::int8tc::log2M[table_idx]; // fld(log2(M-1)/2 - 0.5)
     if constexpr (std::is_same_v<T, double>) {
-        if (num_moduli <= 13) {
+        if (num_moduli <= 12) {
             if (op_A == CUBLAS_OP_N) {
                 scalingA_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
             } else {
@@ -466,7 +466,7 @@ __inline__ void scaling(cublasHandle_t handle,        // Handle to the cuBLAS li
             } else {
                 scalingBT_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
             }
-        } else if (num_moduli <= 19) {
+        } else if (num_moduli <= 18) {
             if (op_A == CUBLAS_OP_N) {
                 scalingA_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
             } else {
@@ -478,7 +478,7 @@ __inline__ void scaling(cublasHandle_t handle,        // Handle to the cuBLAS li
                 scalingBT_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(m, k, incB8i, num_moduli, B, ldb, C32i, m_pad, B8i, ldb8i, sftB, log2M);
             }
         } else {
-            // num_moduli <= 26
+            // num_moduli <= 25
             if (op_A == CUBLAS_OP_N) {
                 scalingA_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(n, k, incA8i, num_moduli, A, lda, C32i, m_pad, A8i, lda8i, sftA, log2M);
             } else {
@@ -714,7 +714,7 @@ __inline__ void scaling(const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_O
     const float log2M = oz2_table::vecnorm::log2M[table_idx]; // fld(log2(M-1)/2 - 1.5)
 
     if constexpr (std::is_same_v<T, double>) {
-        if (num_moduli <= 13) {
+        if (num_moduli <= 12) {
             if (op_A == CUBLAS_OP_N) {
                 scalingA_kernel<T, 1><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
             } else {
@@ -725,7 +725,7 @@ __inline__ void scaling(const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_O
             } else {
                 scalingA_kernel<T, 1><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
             }
-        } else if (num_moduli <= 19) {
+        } else if (num_moduli <= 18) {
             if (op_A == CUBLAS_OP_N) {
                 scalingA_kernel<T, 2><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
             } else {
@@ -737,7 +737,7 @@ __inline__ void scaling(const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_O
                 scalingA_kernel<T, 2><<<n, oz2_const::threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB, log2M);
             }
         } else {
-            // num_moduli <= 26
+            // num_moduli <= 25
             if (op_A == CUBLAS_OP_N) {
                 scalingA_kernel<T, 3><<<m, oz2_const::threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA, log2M);
             } else {
