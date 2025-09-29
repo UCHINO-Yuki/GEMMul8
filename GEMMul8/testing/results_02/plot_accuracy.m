@@ -62,22 +62,22 @@ if any(contains(filename_f,'GH200')) && any(contains(filename_d,'GH200'))
             OS2_accu = err(phi == phi_list(p) & contains(func,"OS2-accu") & contains(func,num2str(k)),:);
 
             midx = find(k==k_list);
-            pl = plot(xx, DGEMM, mark(midx,1), 'DisplayName', "DGEMM (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, DGEMM, mark(midx,1), 'DisplayName', "DGEMM (k=" + k +")", 'LineWidth',lw(midx));
             li = 0;
             lines = [];
             names = {};
             li=li+1; lines(li) = pl; names{li} = 'DGEMM';
             if ~isempty(ozIMMU_EF_8)
-                pl = plot(xx, ozIMMU_EF_8, mark(midx,2), 'DisplayName', "ozIMMU\_EF-8 (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, ozIMMU_EF_8, mark(midx,2), 'DisplayName', "ozIMMU\_EF-8 (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'ozIMMU\_EF-8';
             end
             if ~isempty(ozIMMU_EF_9)
-                pl = plot(xx, ozIMMU_EF_9, mark(midx,5), 'DisplayName', "ozIMMU\_EF-9 (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, ozIMMU_EF_9, mark(midx,5), 'DisplayName', "ozIMMU\_EF-9 (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'ozIMMU\_EF-9';
             end
-            pl = plot(xx, OS2_fast, mark(midx,3), 'DisplayName', "OS II-fast (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, OS2_fast, mark(midx,3), 'DisplayName', "OS II-fast (k=" + k +")", 'LineWidth',lw(midx));
             li=li+1; lines(li) = pl; names{li} = 'OS II-fast';
-            pl = plot(xx, OS2_accu, mark(midx,4), 'DisplayName', "OS II-accu (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, OS2_accu, mark(midx,4), 'DisplayName', "OS II-accu (k=" + k +")", 'LineWidth',lw(midx));
             li=li+1; lines(li) = pl; names{li} = 'OS II-accu';
 
             if k==k_list(1)
@@ -85,6 +85,9 @@ if any(contains(filename_f,'GH200')) && any(contains(filename_d,'GH200'))
                 NAMES = names;
             end
         end
+
+        xr = xregion(14,17,FaceColor="r");
+        set(get(get(xr, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off');
 
         ylim(YLIM);
         yticks(10.^(-20:4:30));
@@ -97,13 +100,13 @@ if any(contains(filename_f,'GH200')) && any(contains(filename_d,'GH200'))
             yticklabels("");
         end
         set(gca,'YScale','Log','FontSize',FontSize);
-        title("$\phi=" + phi_list(p) + "$",'Interpreter','Latex','FontSize',FontSize+2);
+        title("$\phi=" + phi_list(p) + "$",'Interpreter','Latex','FontSize',FontSize+1);
     end
     lgd = legend(LINES, NAMES);
     lgd.Layout.Tile = 6;
     lgd.NumColumns = 1;
-    lgd.FontSize = FontSize+2;
-    title(lgd, "GH200", 'FontSize',FontSize+2);
+    lgd.FontSize = FontSize+1;
+    title(lgd, "GH200", 'FontSize',FontSize+1);
 
     filename = filename_f(contains(filename_f,'GH200'));
     opts = detectImportOptions(filename);
@@ -143,26 +146,26 @@ if any(contains(filename_f,'GH200')) && any(contains(filename_d,'GH200'))
             OS2_accu = err(phi == phi_list(p) & contains(func,"OS2-accu") & contains(func,num2str(k)),:);
 
             midx = find(k==k_list);
-            pl = plot(xx, SGEMM, mark(midx,1), 'DisplayName', "SGEMM (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, SGEMM, mark(midx,1), 'DisplayName', "SGEMM (k=" + k +")", 'LineWidth',lw(midx));
             li = 0;
             lines = [];
             names = {};
             li=li+1; lines(li) = pl; names{li} = 'SGEMM';
             if ~isempty(SGEMM_TF)
-                pl = plot(xx, SGEMM_TF, mark(midx,2), 'DisplayName', "TF32GEMM (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, SGEMM_TF, mark(midx,2), 'DisplayName', "TF32GEMM (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'TF32GEMM';
             end
             if ~isempty(SGEMM_BF)
-                pl = plot(xx, SGEMM_BF, mark(midx,5), 'DisplayName', "BF16x9 (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, SGEMM_BF, mark(midx,5), 'DisplayName', "BF16x9 (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'BF16x9';
             end
             if ~isempty(FP16TCEC)
-                pl = plot(xx, FP16TCEC, mark(midx,6), 'DisplayName', "cuMpSGEMM (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, FP16TCEC, mark(midx,6), 'DisplayName', "cuMpSGEMM (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'cuMpSGEMM';
             end
-            pl = plot(xx, OS2_fast, mark(midx,3), 'DisplayName', "OS II-fast (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, OS2_fast, mark(midx,3), 'DisplayName', "OS II-fast (k=" + k +")", 'LineWidth',lw(midx));
             li=li+1; lines(li) = pl; names{li} = 'OS II-fast';
-            pl = plot(xx, OS2_accu, mark(midx,4), 'DisplayName', "OS II-accu (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, OS2_accu, mark(midx,4), 'DisplayName', "OS II-accu (k=" + k +")", 'LineWidth',lw(midx));
             li=li+1; lines(li) = pl; names{li} = 'OS II-accu';
 
             if k==k_list(1)
@@ -170,6 +173,9 @@ if any(contains(filename_f,'GH200')) && any(contains(filename_d,'GH200'))
                 NAMES = names;
             end
         end
+
+        xr = xregion(6,9,FaceColor="r");
+        set(get(get(xr, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off');
 
         ylim(YLIM);
         yticks(10.^(-22:4:30));
@@ -182,16 +188,16 @@ if any(contains(filename_f,'GH200')) && any(contains(filename_d,'GH200'))
             yticklabels("");
         end
         set(gca,'YScale','Log','FontSize',FontSize);
-        title("$\phi=" + phi_list(p) + "$",'Interpreter','Latex','FontSize',FontSize+2);
+        title("$\phi=" + phi_list(p) + "$",'Interpreter','Latex','FontSize',FontSize+1);
     end
     lgd = legend(LINES, NAMES);
     lgd.Layout.Tile = 12;
     lgd.NumColumns = 1;
-    lgd.FontSize = FontSize+2;
-    title(lgd, "GH200", 'FontSize',FontSize+2);
+    lgd.FontSize = FontSize+1;
+    title(lgd, "GH200", 'FontSize',FontSize+1);
 
-    xlabel(t,"Number of moduli",'FontSize',FontSize+2);
-    ylabel(t,"max relative error",'FontSize',FontSize+2);
+    xlabel(t,"Number of moduli",'FontSize',FontSize+1);
+    ylabel(t,"max relative error",'FontSize',FontSize+1);
     t.TileSpacing = "tight";
     t.Padding = "compact";
 
@@ -261,26 +267,26 @@ for fn = 1:length(filename_f)
             OS2_accu = err(phi == phi_list(p) & contains(func,"OS2-accu") & contains(func,num2str(k)),:);
 
             midx = find(k==k_list);
-            pl = plot(xx, SGEMM, mark(midx,1), 'DisplayName', "SGEMM (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, SGEMM, mark(midx,1), 'DisplayName', "SGEMM (k=" + k +")", 'LineWidth',lw(midx));
             li = 0;
             lines = [];
             names = {};
             li=li+1; lines(li) = pl; names{li} = 'SGEMM';
             if ~isempty(SGEMM_TF)
-                pl = plot(xx, SGEMM_TF, mark(midx,2), 'DisplayName', "TF32GEMM (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, SGEMM_TF, mark(midx,2), 'DisplayName', "TF32GEMM (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'TF32GEMM';
             end
             if ~isempty(SGEMM_BF)
-                pl = plot(xx, SGEMM_BF, mark(midx,5), 'DisplayName', "BF16x9 (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, SGEMM_BF, mark(midx,5), 'DisplayName', "BF16x9 (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'BF16x9';
             end
             if ~isempty(FP16TCEC)
-                pl = plot(xx, FP16TCEC, mark(midx,6), 'DisplayName', "cuMpSGEMM (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, FP16TCEC, mark(midx,6), 'DisplayName', "cuMpSGEMM (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'cuMpSGEMM';
             end
-            pl = plot(xx, OS2_fast, mark(midx,3), 'DisplayName', "OS II-fast (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, OS2_fast, mark(midx,3), 'DisplayName', "OS II-fast (k=" + k +")", 'LineWidth',lw(midx));
             li=li+1; lines(li) = pl; names{li} = 'OS II-fast';
-            pl = plot(xx, OS2_accu, mark(midx,4), 'DisplayName', "OS II-accu (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, OS2_accu, mark(midx,4), 'DisplayName', "OS II-accu (k=" + k +")", 'LineWidth',lw(midx));
             li=li+1; lines(li) = pl; names{li} = 'OS II-accu';
 
             if k==k_list(1)
@@ -300,23 +306,23 @@ for fn = 1:length(filename_f)
             yticklabels("");
         end
         set(gca,'YScale','Log','FontSize',FontSize);
-        title("$\phi=" + phi_list(p) + "$",'Interpreter','Latex','FontSize',FontSize+2);
+        title("$\phi=" + phi_list(p) + "$",'Interpreter','Latex','FontSize',FontSize+1);
     end
     lgd = legend(LINES, NAMES);
     lgd.Layout.Tile = 6;
     lgd.NumColumns = 1;
-    lgd.FontSize = FontSize+2;
+    lgd.FontSize = FontSize+1;
     if contains(env,"GH200")
-        title(lgd, "GH200", 'FontSize',FontSize+2);
+        title(lgd, "GH200", 'FontSize',FontSize+1);
     elseif contains(env,"A100")
-        title(lgd, "A100 SXM4", 'FontSize',FontSize+2);
+        title(lgd, "A100 SXM4", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 4090")
-        title(lgd, "RTX 4090", 'FontSize',FontSize+2);
+        title(lgd, "RTX 4090", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 5080")
-        title(lgd, "RTX 5080", 'FontSize',FontSize+2);
+        title(lgd, "RTX 5080", 'FontSize',FontSize+1);
     end
-    xlabel(t,"Number of moduli",'FontSize',FontSize+2);
-    ylabel(t,"max relative error",'FontSize',FontSize+2);
+    xlabel(t,"Number of moduli",'FontSize',FontSize+1);
+    ylabel(t,"max relative error",'FontSize',FontSize+1);
     t.TileSpacing = "tight";
     t.Padding = "compact";
 
@@ -383,22 +389,22 @@ for fn = 1:length(filename_d)
             OS2_accu = err(phi == phi_list(p) & contains(func,"OS2-accu") & contains(func,num2str(k)),:);
 
             midx = find(k==k_list);
-            pl = plot(xx, DGEMM, mark(midx,1), 'DisplayName', "DGEMM (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, DGEMM, mark(midx,1), 'DisplayName', "DGEMM (k=" + k +")", 'LineWidth',lw(midx));
             li = 0;
             lines = [];
             names = {};
             li=li+1; lines(li) = pl; names{li} = 'DGEMM';
             if ~isempty(ozIMMU_EF_8)
-                pl = plot(xx, ozIMMU_EF_8, mark(midx,2), 'DisplayName', "ozIMMU\_EF-8 (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, ozIMMU_EF_8, mark(midx,2), 'DisplayName', "ozIMMU\_EF-8 (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'ozIMMU\_EF-8';
             end
             if ~isempty(ozIMMU_EF_9)
-                pl = plot(xx, ozIMMU_EF_9, mark(midx,5), 'DisplayName', "ozIMMU\_EF-9 (k=" + k +")", 'LineWidth',1);
+                pl = plot(xx, ozIMMU_EF_9, mark(midx,5), 'DisplayName', "ozIMMU\_EF-9 (k=" + k +")", 'LineWidth',lw(midx));
                 li=li+1; lines(li) = pl; names{li} = 'ozIMMU\_EF-9';
             end
-            pl = plot(xx, OS2_fast, mark(midx,3), 'DisplayName', "OS II-fast (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, OS2_fast, mark(midx,3), 'DisplayName', "OS II-fast (k=" + k +")", 'LineWidth',lw(midx));
             li=li+1; lines(li) = pl; names{li} = 'OS II-fast';
-            pl = plot(xx, OS2_accu, mark(midx,4), 'DisplayName', "OS II-accu (k=" + k +")", 'LineWidth',1);
+            pl = plot(xx, OS2_accu, mark(midx,4), 'DisplayName', "OS II-accu (k=" + k +")", 'LineWidth',lw(midx));
             li=li+1; lines(li) = pl; names{li} = 'OS II-accu';
 
             if k==k_list(1)
@@ -418,23 +424,23 @@ for fn = 1:length(filename_d)
             yticklabels("");
         end
         set(gca,'YScale','Log','FontSize',FontSize);
-        title("$\phi=" + phi_list(p) + "$",'Interpreter','Latex','FontSize',FontSize+2);
+        title("$\phi=" + phi_list(p) + "$",'Interpreter','Latex','FontSize',FontSize+1);
     end
     lgd = legend(LINES, NAMES);
     lgd.Layout.Tile = 6;
     lgd.NumColumns = 1;
-    lgd.FontSize = FontSize+2;
+    lgd.FontSize = FontSize+1;
     if contains(env,"GH200")
-        title(lgd, "GH200", 'FontSize',FontSize+2);
+        title(lgd, "GH200", 'FontSize',FontSize+1);
     elseif contains(env,"A100")
-        title(lgd, "A100 SXM4", 'FontSize',FontSize+2);
+        title(lgd, "A100 SXM4", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 4090")
-        title(lgd, "RTX 4090", 'FontSize',FontSize+2);
+        title(lgd, "RTX 4090", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 5080")
-        title(lgd, "RTX 5080", 'FontSize',FontSize+2);
+        title(lgd, "RTX 5080", 'FontSize',FontSize+1);
     end
-    xlabel(t,"Number of moduli",'FontSize',FontSize+2);
-    ylabel(t,"max relative error",'FontSize',FontSize+2);
+    xlabel(t,"Number of moduli",'FontSize',FontSize+1);
+    ylabel(t,"max relative error",'FontSize',FontSize+1);
     t.TileSpacing = "tight";
     t.Padding = "compact";
 
@@ -449,3 +455,11 @@ end
 
 end
 
+
+function w = lw(id)
+if id == 1
+    w = 1.2;
+else
+    w = 0.7;
+end
+end

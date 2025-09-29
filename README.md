@@ -113,10 +113,10 @@ The library can automatically intercept calls to cuBLAS GEMM functions (cublasSg
 
 ```
 export LD_PRELOAD=/path/to/libgemmul8.so
-export NUM_MODULI=15
-export FASTMODE=1
-export NUM_MODULI_F=7
-export FASTMODE_F=0
+export NUM_MODULI_D=15
+export FASTMODE_D=1
+export NUM_MODULI_S=7
+export FASTMODE_S=0
 ```
 
 - `NUM_MODULI_D` (default: `18`)

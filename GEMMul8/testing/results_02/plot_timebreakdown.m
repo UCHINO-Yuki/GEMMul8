@@ -49,7 +49,7 @@ for fn = 1:length(filename_f)
 
     fig = figure;
     fig.Position(3) = 500;
-    fig.Position(4) = 270;
+    fig.Position(4) = 250;
     t = tiledlayout(2,length(n_list));
     for ni = 1:length(n_list)
         nexttile(ni); hold on; grid on;
@@ -76,9 +76,9 @@ for fn = 1:length(filename_f)
         if ni>1
             yticklabels("");
         else
-            ylabel("% (fast)",'FontSize',FontSize+2);
+            ylabel("% (fast)",'FontSize',FontSize+1);
         end
-        title("n=" + n_list(ni),'FontSize',FontSize+2);
+        title("n=" + n_list(ni),'FontSize',FontSize+1);
 
         nexttile(ni + length(n_list)); hold on; grid on;
         flag = false(size(n));
@@ -101,11 +101,11 @@ for fn = 1:length(filename_f)
         if ni>1
             yticklabels("");
         else
-            ylabel("% (accurate)",'FontSize',FontSize+2);
+            ylabel("% (accurate)",'FontSize',FontSize+1);
         end
     end
     lgd = legend(labels);
-    lgd.FontSize = FontSize+2;
+    lgd.FontSize = FontSize+1;
     lgd.Layout.Tile = 'north';
     lgd.NumColumns = 4;
     lgd.Direction = "normal";
@@ -115,15 +115,15 @@ for fn = 1:length(filename_f)
     env = replace(env,"_"," ");
     env = replace(env,"-"," ");
     if contains(env,"GH200")
-        title(lgd, "GH200", 'FontSize',FontSize+2);
+        title(lgd, "GH200", 'FontSize',FontSize+1);
     elseif contains(env,"A100")
-        title(lgd, "A100 SXM4", 'FontSize',FontSize+2);
+        title(lgd, "A100 SXM4", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 4090")
-        title(lgd, "RTX 4090", 'FontSize',FontSize+2);
+        title(lgd, "RTX 4090", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 5080")
-        title(lgd, "RTX 5080", 'FontSize',FontSize+2);
+        title(lgd, "RTX 5080", 'FontSize',FontSize+1);
     end
-    xlabel(t,"Number of moduli",'FontSize',FontSize+2);
+    xlabel(t,"Number of moduli",'FontSize',FontSize+1);
     t.TileSpacing = "tight";
     t.Padding = "compact";
 
@@ -161,7 +161,7 @@ for fn = 1:length(filename_d)
 
     fig = figure;
     fig.Position(3) = 500;
-    fig.Position(4) = 270;
+    fig.Position(4) = 250;
     t = tiledlayout(2,length(n_list));
     for ni = 1:length(n_list)
         nexttile(ni); hold on; grid on;
@@ -185,11 +185,11 @@ for fn = 1:length(filename_d)
         xticklabels(xl);
         yticks(0:25:100);
         set(gca,'FontSize',FontSize);
-        title("n=" + n_list(ni),'FontSize',FontSize+2);
+        title("n=" + n_list(ni),'FontSize',FontSize+1);
         if ni>1
             yticklabels("");
         else
-            ylabel("% (fast)",'FontSize',FontSize+2);
+            ylabel("% (fast)",'FontSize',FontSize+1);
         end
 
         nexttile(ni + length(n_list)); hold on; grid on;
@@ -213,11 +213,11 @@ for fn = 1:length(filename_d)
         if ni>1
             yticklabels("");
         else
-            ylabel("% (accurate)",'FontSize',FontSize+2);
+            ylabel("% (accurate)",'FontSize',FontSize+1);
         end
     end
     lgd = legend(labels);
-    lgd.FontSize = FontSize+2;
+    lgd.FontSize = FontSize+1;
     lgd.Layout.Tile = 'north';
     lgd.NumColumns = 4;
     lgd.Direction = "normal";
@@ -227,15 +227,15 @@ for fn = 1:length(filename_d)
     env = replace(env,"_"," ");
     env = replace(env,"-"," ");
     if contains(env,"GH200")
-        title(lgd, "GH200", 'FontSize',FontSize+2);
+        title(lgd, "GH200", 'FontSize',FontSize+1);
     elseif contains(env,"A100")
-        title(lgd, "A100 SXM4", 'FontSize',FontSize+2);
+        title(lgd, "A100 SXM4", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 4090")
-        title(lgd, "RTX 4090", 'FontSize',FontSize+2);
+        title(lgd, "RTX 4090", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 5080")
-        title(lgd, "RTX 5080", 'FontSize',FontSize+2);
+        title(lgd, "RTX 5080", 'FontSize',FontSize+1);
     end
-    xlabel(t,"Number of moduli",'FontSize',FontSize+2);
+    xlabel(t,"Number of moduli",'FontSize',FontSize+1);
     t.TileSpacing = "tight";
     t.Padding = "compact";
 

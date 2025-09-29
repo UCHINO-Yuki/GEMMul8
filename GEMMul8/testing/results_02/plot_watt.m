@@ -22,7 +22,7 @@ FontSize = 8;
 fig = figure;
 fig.Position(1) = 100;
 fig.Position(3) = 1000;
-fig.Position(4) = 125*length(filename_f);
+fig.Position(4) = 115*length(filename_f);
 t = tiledlayout(length(filename_f),6);
 for fn = 1:length(filename_f)
     filename = filename_f(fn);
@@ -57,16 +57,16 @@ for fn = 1:length(filename_f)
         FP16TCEC = gflops_watt(n == n_list(ni) & func == "FP16TCEC_SCALING");
         OS2_fast = gflops_watt(n == n_list(ni) & contains(func,"OS2-fast"));
         OS2_accu = gflops_watt(n == n_list(ni) & contains(func,"OS2-accu"));
-        plot(xx, SGEMM*ones(size(xx)), mark(1,1), 'DisplayName', "SGEMM", 'LineWidth',1);
-        plot(xx, SGEMM_TF*ones(size(xx)), mark(1,2), 'DisplayName', "TF32GEMM", 'LineWidth',1);
+        plot(xx, SGEMM*ones(size(xx)), mark(1,1), 'DisplayName', "SGEMM", 'LineWidth',1.2);
+        plot(xx, SGEMM_TF*ones(size(xx)), mark(1,2), 'DisplayName', "TF32GEMM", 'LineWidth',1.2);
         if ~isempty(SGEMM_BF)
-            plot(xx, SGEMM_BF*ones(size(xx)), mark(1,5), 'DisplayName', "BF16x9", 'LineWidth',1);
+            plot(xx, SGEMM_BF*ones(size(xx)), mark(2,5), 'DisplayName', "BF16x9", 'LineWidth',0.7);
         end
         if ~isempty(FP16TCEC)
-            plot(xx, FP16TCEC*ones(size(xx)), mark(1,6), 'DisplayName', "cuMpSGEMM", 'LineWidth',1);
+            plot(xx, FP16TCEC*ones(size(xx)), mark(1,6), 'DisplayName', "cuMpSGEMM", 'LineWidth',1.2);
         end
-        plot(xx, OS2_fast, mark(1,3), 'DisplayName', "OS II-fast", 'LineWidth',1);
-        plot(xx, OS2_accu, mark(1,4), 'DisplayName', "OS II-accu", 'LineWidth',1);
+        plot(xx, OS2_fast, mark(1,3), 'DisplayName', "OS II-fast", 'LineWidth',1.2);
+        plot(xx, OS2_accu, mark(1,4), 'DisplayName', "OS II-accu", 'LineWidth',1.2);
 
         xr = xregion(6,9,FaceColor="r");
         set(get(get(xr, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off');
@@ -86,31 +86,31 @@ for fn = 1:length(filename_f)
                 break
             end
         end
-        title("n=" + n_list(ni),'FontSize',FontSize+2);
+        title("n=" + n_list(ni),'FontSize',FontSize+1);
     end
     lgd = legend;
     lgd.Layout.Tile = 6 * fn;
     lgd.NumColumns = 1;
-    lgd.FontSize = FontSize+2;
+    lgd.FontSize = FontSize+1;
     pattern = "watt_(.*?)_2025";
     match = regexp(filename, pattern, 'tokens');
     env = match{1}{1};
     env = replace(env,"_"," ");
     env = replace(env,"-"," ");
     if contains(env,"GH200")
-        title(lgd, "GH200", 'FontSize',FontSize+2);
+        title(lgd, "GH200", 'FontSize',FontSize+1);
     elseif contains(env,"A100")
-        title(lgd, "A100 SXM4", 'FontSize',FontSize+2);
+        title(lgd, "A100 SXM4", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 4090")
-        title(lgd, "RTX 4090", 'FontSize',FontSize+2);
+        title(lgd, "RTX 4090", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 5080")
-        title(lgd, "RTX 5080", 'FontSize',FontSize+2);
+        title(lgd, "RTX 5080", 'FontSize',FontSize+1);
     else
         title(t, env, 'FontSize',FontSize);
     end
 end
-xlabel(t,"Number of moduli",'FontSize',FontSize+2);
-ylabel(t,"GFLOPS/watt",'FontSize',FontSize+2);
+xlabel(t,"Number of moduli",'FontSize',FontSize+1);
+ylabel(t,"GFLOPS/watt",'FontSize',FontSize+1);
 t.TileSpacing = "tight";
 t.Padding = "compact";
 
@@ -126,7 +126,7 @@ end
 fig = figure;
 fig.Position(1) = 100;
 fig.Position(3) = 1000;
-fig.Position(4) = 125*length(filename_d);
+fig.Position(4) = 115*length(filename_d);
 t = tiledlayout(length(filename_d),6);
 for fn = 1:length(filename_d)
     filename = filename_d(fn);
@@ -161,15 +161,15 @@ for fn = 1:length(filename_d)
         ozIMMU_EF_9 = gflops_watt(n == n_list(ni) & contains(func,"ozIMMU_EF-9"));
         OS2_fast = gflops_watt(n == n_list(ni) & contains(func,"OS2-fast"));
         OS2_accu = gflops_watt(n == n_list(ni) & contains(func,"OS2-accu"));
-        plot(xx, DGEMM*ones(size(xx)), mark(1,1), 'DisplayName', "DGEMM", 'LineWidth',1);
+        plot(xx, DGEMM*ones(size(xx)), mark(1,1), 'DisplayName', "DGEMM", 'LineWidth',1.2);
         if ~isempty(ozIMMU_EF_8)
-            plot(xx, ozIMMU_EF_8*ones(size(xx)), mark(1,2), 'DisplayName', "ozIMMU\_EF-8", 'LineWidth',1);
+            plot(xx, ozIMMU_EF_8*ones(size(xx)), mark(1,2), 'DisplayName', "ozIMMU\_EF-8", 'LineWidth',1.2);
         end
         if ~isempty(ozIMMU_EF_9)
-            plot(xx, ozIMMU_EF_9*ones(size(xx)), mark(1,5), 'DisplayName', "ozIMMU\_EF-9", 'LineWidth',1);
+            plot(xx, ozIMMU_EF_9*ones(size(xx)), mark(1,5), 'DisplayName', "ozIMMU\_EF-9", 'LineWidth',1.2);
         end
-        plot(xx, OS2_fast, mark(1,3), 'DisplayName', "OS II-fast", 'LineWidth',1);
-        plot(xx, OS2_accu, mark(1,4), 'DisplayName', "OS II-accu", 'LineWidth',1);
+        plot(xx, OS2_fast, mark(1,3), 'DisplayName', "OS II-fast", 'LineWidth',1.2);
+        plot(xx, OS2_accu, mark(1,4), 'DisplayName', "OS II-accu", 'LineWidth',1.2);
 
         xr = xregion(14,17,FaceColor="r");
         set(get(get(xr, 'Annotation'), 'LegendInformation'), 'IconDisplayStyle', 'off');
@@ -189,31 +189,31 @@ for fn = 1:length(filename_d)
             end
         end
         set(gca,'FontSize',FontSize);
-        title("n=" + n_list(ni),'FontSize',FontSize+2);
+        title("n=" + n_list(ni),'FontSize',FontSize+1);
     end
     lgd = legend;
     lgd.Layout.Tile = 6*fn;
     lgd.NumColumns = 1;
-    lgd.FontSize = FontSize+2;
+    lgd.FontSize = FontSize+1;
     pattern = "watt_(.*?)_2025";
     match = regexp(filename, pattern, 'tokens');
     env = match{1}{1};
     env = replace(env,"_"," ");
     env = replace(env,"-"," ");
     if contains(env,"GH200")
-        title(lgd, "GH200", 'FontSize',FontSize+2);
+        title(lgd, "GH200", 'FontSize',FontSize+1);
     elseif contains(env,"A100")
-        title(lgd, "A100 SXM4", 'FontSize',FontSize+2);
+        title(lgd, "A100 SXM4", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 4090")
-        title(lgd, "RTX 4090", 'FontSize',FontSize+2);
+        title(lgd, "RTX 4090", 'FontSize',FontSize+1);
     elseif contains(env,"RTX 5080")
-        title(lgd, "RTX 5080", 'FontSize',FontSize+2);
+        title(lgd, "RTX 5080", 'FontSize',FontSize+1);
     else
-        title(t, env, 'FontSize',FontSize+2);
+        title(t, env, 'FontSize',FontSize+1);
     end
 end
-xlabel(t,"Number of moduli",'FontSize',FontSize+2);
-ylabel(t,"GFLOPS/watt",'FontSize',FontSize+2);
+xlabel(t,"Number of moduli",'FontSize',FontSize+1);
+ylabel(t,"GFLOPS/watt",'FontSize',FontSize+1);
 t.TileSpacing = "tight";
 t.Padding = "compact";
 
