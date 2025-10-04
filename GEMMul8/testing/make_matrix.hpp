@@ -1,5 +1,5 @@
 #pragma once
-#include <curand_kernel.h>
+#include "cuda_impl.hpp"
 
 namespace makemat {
 
@@ -52,6 +52,82 @@ __global__ void randmat_kernel(size_t m,                      // rows of A
 void randmat(size_t m,                      // rows of A
              size_t n,                      // columns of A
              double *const A,               // output
+             double phi,                    // difficulty for matrix multiplication
+             const unsigned long long seed) // seed for random numbers
+{
+    constexpr size_t block_size = 256;
+    const size_t grid_size      = (m * n + block_size - 1) / block_size;
+    randmat_kernel<<<grid_size, block_size>>>(m, n, A, phi, seed);
+    cudaDeviceSynchronize();
+}
+
+#pragma clang optimize off
+__global__ void randmat_kernel(size_t m,
+                               size_t n,
+                               cuComplex *const A,
+                               float phi,
+                               unsigned long long seed) //
+{
+    const auto idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx >= m * n) return;
+    curandState state;
+    curand_init(seed, idx, 0, &state);
+
+    // real
+    float rand_r  = static_cast<float>(curand_uniform_double(&state));
+    float randn_r = static_cast<float>(curand_normal_double(&state));
+    float real    = (rand_r - 0.5f) * expf(randn_r * phi);
+
+    // img
+    float rand_i  = static_cast<float>(curand_uniform_double(&state));
+    float randn_i = static_cast<float>(curand_normal_double(&state));
+    float imag    = (rand_i - 0.5f) * expf(randn_i * phi);
+
+    A[idx] = make_cuComplex(real, imag);
+}
+#pragma clang optimize on
+
+void randmat(size_t m,                      // rows of A
+             size_t n,                      // columns of A
+             cuComplex *const A,            // output
+             float phi,                     // difficulty for matrix multiplication
+             const unsigned long long seed) // seed for random numbers
+{
+    constexpr size_t block_size = 256;
+    const size_t grid_size      = (m * n + block_size - 1) / block_size;
+    randmat_kernel<<<grid_size, block_size>>>(m, n, A, phi, seed);
+    cudaDeviceSynchronize();
+}
+
+#pragma clang optimize off
+__global__ void randmat_kernel(size_t m,
+                               size_t n,
+                               cuDoubleComplex *const A,
+                               double phi,
+                               unsigned long long seed) //
+{
+    const auto idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx >= m * n) return;
+    curandState state;
+    curand_init(seed, idx, 0, &state);
+
+    // real
+    double rand_r  = curand_uniform_double(&state);
+    double randn_r = curand_normal_double(&state);
+    double real    = (rand_r - 0.5) * exp(randn_r * phi);
+
+    // img
+    double rand_i  = curand_uniform_double(&state);
+    double randn_i = curand_normal_double(&state);
+    double imag    = (rand_i - 0.5) * exp(randn_i * phi);
+
+    A[idx] = make_cuDoubleComplex(real, imag);
+}
+#pragma clang optimize on
+
+void randmat(size_t m,                      // rows of A
+             size_t n,                      // columns of A
+             cuDoubleComplex *const A,      // output
              double phi,                    // difficulty for matrix multiplication
              const unsigned long long seed) // seed for random numbers
 {

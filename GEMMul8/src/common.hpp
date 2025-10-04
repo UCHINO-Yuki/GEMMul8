@@ -1,15 +1,14 @@
 #pragma once
+#include "cuda_impl.hpp"
 #include "table.hpp"
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <cublas_v2.h>
-#include <cuda_runtime.h>
-#include <curand_kernel.h>
-#include <iostream>
 #include <random>
 #include <vector>
+
+#define minus_half -0x1.0000060000000p-1F
 
 namespace oz2_const {
 
@@ -27,6 +26,11 @@ template <typename T>
 struct Vec4 {
     T x, y, z, w;
 };
+
+template <typename T> bool is_pow2(T n) {
+    if (n == 0) return false;
+    return (n & (n - 1)) == 0;
+}
 
 template <typename T> __forceinline__ __device__ T Tabs(T in);
 template <> __forceinline__ __device__ double Tabs<double>(double in) { return fabs(in); };
@@ -65,25 +69,25 @@ template <> __forceinline__ __device__ float Tfma<float>(const float in1, float 
 template <typename T, int N> __forceinline__ __device__ void inner_warp_max(T &amax) {
 #pragma unroll
     for (int offset = N; offset > 0; offset >>= 1) {
-        amax = max(amax, __shfl_down_sync(0xFFFFFFFFu, amax, offset));
+        amax = max(amax, __shfl_down_sync(FULL_MASK, amax, offset));
     }
 }
 template <int N> __forceinline__ __device__ void inner_warp_sum(double &sum) {
 #pragma unroll
     for (int offset = N; offset > 0; offset >>= 1) {
-        sum = __dadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, offset));
+        sum = __dadd_ru(sum, __shfl_down_sync(FULL_MASK, sum, offset));
     }
 }
 template <int N> __forceinline__ __device__ void inner_warp_sum(float &sum) {
 #pragma unroll
     for (int offset = N; offset > 0; offset >>= 1) {
-        sum = __fadd_ru(sum, __shfl_down_sync(0xFFFFFFFFu, sum, offset));
+        sum = __fadd_ru(sum, __shfl_down_sync(FULL_MASK, sum, offset));
     }
 }
 template <int N> __forceinline__ __device__ void inner_warp_sum(int32_t &sum) {
 #pragma unroll
     for (int offset = N; offset > 0; offset >>= 1) {
-        sum += __shfl_down_sync(0xFFFFFFFFu, sum, offset);
+        sum += __shfl_down_sync(FULL_MASK, sum, offset);
     }
 }
 
@@ -94,36 +98,30 @@ template <> __device__ __forceinline__ oz2_table::tab_t<float> readtab<float>(un
 // calculate mod: a - round(a/p(j))*p(j)
 template <typename T, int MODE> __device__ __forceinline__ int8_t mod_8i(T a, oz2_table::tab_t<T> val);
 template <> __device__ __forceinline__ int8_t mod_8i<double, 1>(double a, oz2_table::tab_t<double> val) {
-    // const auto val = oz2_table::moduli_dev[j];
     double tmp1 = fma(rint(a * val.y), val.x, a);
     return static_cast<int8_t>(tmp1);
 }
 template <> __device__ __forceinline__ int8_t mod_8i<float, 1>(float a, oz2_table::tab_t<float> val) {
-    // const auto val = oz2_table::modulif_dev[j];
     float tmp1 = __fmaf_rn(rintf(a * val.y), val.x, a);
     return static_cast<int8_t>(tmp1);
 }
 template <> __device__ __forceinline__ int8_t mod_8i<double, 2>(double a, oz2_table::tab_t<double> val) {
-    // const auto val = oz2_table::moduli_dev[j];
     float tmp1 = __double2float_rn(fma(rint(a * val.y), val.x, a));
     float tmp2 = __fmaf_rn(rintf(tmp1 * val.w), val.z, tmp1);
     return static_cast<int8_t>(tmp2);
 }
 template <> __device__ __forceinline__ int8_t mod_8i<float, 2>(float a, oz2_table::tab_t<float> val) {
-    // const auto val = oz2_table::modulif_dev[j];
     float tmp1 = __fmaf_rn(rintf(a * val.y), val.x, a);
     float tmp2 = __fmaf_rn(rintf(tmp1 * val.y), val.x, tmp1);
     return static_cast<int8_t>(tmp2);
 }
 template <> __device__ __forceinline__ int8_t mod_8i<double, 3>(double a, oz2_table::tab_t<double> val) {
-    // const auto val = oz2_table::moduli_dev[j];
     float tmp1 = __double2float_rn(fma(rint(a * val.y), val.x, a));
     float tmp2 = __fmaf_rn(rintf(tmp1 * val.w), val.z, tmp1);
     float tmp3 = __fmaf_rn(rintf(tmp2 * val.w), val.z, tmp2);
     return static_cast<int8_t>(tmp3);
 }
 template <> __device__ __forceinline__ int8_t mod_8i<float, 3>(float a, oz2_table::tab_t<float> val) {
-    // const auto val = oz2_table::modulif_dev[j];
     float tmp1 = __fmaf_rn(rintf(a * val.y), val.x, a);
     float tmp2 = __fmaf_rn(rintf(tmp1 * val.y), val.x, tmp1);
     float tmp3 = __fmaf_rn(rintf(tmp2 * val.y), val.x, tmp2);

@@ -1,7 +1,5 @@
 #pragma once
-#include <cublas_v2.h>
-#include <cuda_runtime.h>
-#include <curand_kernel.h>
+#include "../src/cuda_impl.hpp"
 #include <vector>
 
 namespace gemmul8 {

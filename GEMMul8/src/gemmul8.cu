@@ -160,7 +160,7 @@ std::vector<double> gemm<double>(cublasHandle_t handle,        // Handle to the 
     if (fastmode) {
         oz2_util::vecnorm::scaling<double>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, lda8i * m_pad, sftA, B8i, ldb8i, ldb8i * n, sftB, table_idx);
     } else {
-        oz2_util::int8tc::scaling<double>(handle, op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, lda8i * m_pad, sftA, B8i, ldb8i, ldb8i * n, sftB, C32i, table_idx);
+        oz2_util::int8tc::scaling<double>(handle, op_A, op_B, m, m_pad, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, lda8i * m_pad, sftA, B8i, ldb8i, ldb8i * n, sftB, C32i, table_idx);
     }
     timing_stop(timetmp, timer[0]);
 
@@ -308,7 +308,7 @@ std::vector<double> gemm<float>(cublasHandle_t handle,        // Handle to the c
     if (fastmode) {
         oz2_util::vecnorm::scaling<float>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, lda8i * m_pad, sftA, B8i, ldb8i, ldb8i * n, sftB, table_idx);
     } else {
-        oz2_util::int8tc::scaling<float>(handle, op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, lda8i * m_pad, sftA, B8i, ldb8i, ldb8i * n, sftB, C32i, table_idx);
+        oz2_util::int8tc::scaling<float>(handle, op_A, op_B, m, m_pad, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, lda8i * m_pad, sftA, B8i, ldb8i, ldb8i * n, sftB, C32i, table_idx);
     }
     timing_stop(timetmp, timer[0]);
 

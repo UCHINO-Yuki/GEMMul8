@@ -2,26 +2,16 @@
 #include "eval.hpp"
 #include "getWatt.hpp"
 #include "make_matrix.hpp"
-#include <algorithm>
-#include <chrono>
-#include <cmath>
-#include <cstdint>
-#include <cublas_v2.h>
-#include <cuda_runtime.h>
 #include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
-#include <nvml.h>
-#include <random>
 #include <sstream>
 #include <string>
-#include <vector>
 
-#define AVERAGE 100
-#define SEED    123456
-#define PHI     0.5, 1, 2, 3, 4
-// #define NUM_MODULI 14, 15, 16
+#define AVERAGE    100
+#define SEED       123456
+#define PHI        0.5, 1, 2, 3, 4
 #define NUM_MODULI 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20
 #if defined(GPU_MEM_MB) && GPU_MEM_MB >= 21000
     // more than or equal to 24GB
@@ -124,8 +114,8 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             //--------------------
             // generate matrices
             //--------------------
-            makemat::randmat<double>(m, k, devA, phi, seed);
-            makemat::randmat<double>(k, n, devB, phi, seed);
+            makemat::randmat(m, k, devA, phi, seed);
+            makemat::randmat(k, n, devB, phi, seed);
 
             //--------------------
             // C1+C2 := A*B (double-double arithmetic)
@@ -324,8 +314,8 @@ void time_check(std::string &deviceName, std::string &dateTime) {
         //--------------------
         // generate matrices
         //--------------------
-        makemat::randmat<double>(m, k, devA, phi, seed);
-        makemat::randmat<double>(k, n, devB, phi, seed);
+        makemat::randmat(m, k, devA, phi, seed);
+        makemat::randmat(k, n, devB, phi, seed);
 
         //--------------------
         // C1+C2 := A*B (double-double arithmetic)
@@ -604,8 +594,8 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
         //--------------------
         // generate matrices
         //--------------------
-        makemat::randmat<double>(m, k, devA, phi, seed);
-        makemat::randmat<double>(k, n, devB, phi, seed);
+        makemat::randmat(m, k, devA, phi, seed);
+        makemat::randmat(k, n, devB, phi, seed);
 
         //--------------------
         // C1+C2 := A*B (double-double arithmetic)
@@ -875,8 +865,8 @@ void time_check_rect(std::string &deviceName, std::string &dateTime) {
             //--------------------
             // generate matrices
             //--------------------
-            makemat::randmat<double>(m, k, devA, phi, seed);
-            makemat::randmat<double>(k, n, devB, phi, seed);
+            makemat::randmat(m, k, devA, phi, seed);
+            makemat::randmat(k, n, devB, phi, seed);
 
             //--------------------
             // C1+C2 := A*B (double-double arithmetic)
@@ -1157,8 +1147,8 @@ void watt_check_rect(std::string &deviceName, std::string &dateTime) {
             //--------------------
             // generate matrices
             //--------------------
-            makemat::randmat<double>(m, k, devA, phi, seed);
-            makemat::randmat<double>(k, n, devB, phi, seed);
+            makemat::randmat(m, k, devA, phi, seed);
+            makemat::randmat(k, n, devB, phi, seed);
 
             //--------------------
             // C1+C2 := A*B (double-double arithmetic)

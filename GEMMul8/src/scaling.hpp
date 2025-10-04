@@ -7,8 +7,7 @@ namespace oz2_util {
 namespace int8tc {
 
 __forceinline__ __device__ int compute_sft(int amax, int16_t sftA, const float log2M) {
-    // return sftA + __float2int_rd(__fmaf_rd(-0.51F, __log2f(__int2float_rn(amax)), log2M));
-    return sftA + __float2int_rd(__fmaf_rd(-0x1.0000060000000p-1F, __log2f(__int2float_rn(amax)), log2M));
+    return sftA + __float2int_rd(__fmaf_rd(minus_half, __log2f(__int2float_rn(amax)), log2M));
 }
 
 // extract first 7-bit of A^T
@@ -414,6 +413,7 @@ __inline__ void scaling(cublasHandle_t handle,        // Handle to the cuBLAS li
                         const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
                         const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
                         const size_t m,               // Number of rows of C
+                        const size_t m_pad,           // ((m + 15) >> 4) << 4
                         const size_t n,               // Number of columns of C
                         const size_t k,               // Inner dimension
                         const unsigned num_moduli,    // #moduli
@@ -447,7 +447,6 @@ __inline__ void scaling(cublasHandle_t handle,        // Handle to the cuBLAS li
     // C32i := A8i^T*B8i
     constexpr int32_t alpha = 1;
     constexpr int32_t beta  = 0;
-    const size_t m_pad      = ((m + 3) >> 2) << 2;
     cudaDeviceSynchronize();
     cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, m_pad, n, lda8i, &alpha, A8i, CUDA_R_8I, lda8i, B8i, CUDA_R_8I, ldb8i, &beta, C32i, CUDA_R_32I, m_pad, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
 
@@ -537,13 +536,11 @@ template <typename T> __forceinline__ __device__ int compute_sft(T amax, T vecnr
 template <> __forceinline__ __device__ int compute_sft<double>(double amax, double vecnrm, const float log2M) {
     const int exponent  = Tilogb<double>(vecnrm);
     const float vecnrmf = __double2float_ru(scalbn(vecnrm, -exponent));
-    // const int k         = __float2int_rd(__fmaf_rd(-0.51F, __fadd_ru(__log2f(vecnrmf), exponent), log2M));
-    const int k = __float2int_rd(__fmaf_rd(-0x1.0000060000000p-1F, __fadd_ru(__log2f(vecnrmf), exponent), log2M));
+    const int k         = __float2int_rd(__fmaf_rd(minus_half, __fadd_ru(__log2f(vecnrmf), exponent), log2M));
     return min(__float2int_rd(log2M - 1.0f), k) - Tilogb<double>(amax);
 }
 template <> __forceinline__ __device__ int compute_sft<float>(float amax, float vecnrm, const float log2M) {
-    // const int k = __float2int_rd(__fmaf_rd(-0.51F, __log2f(vecnrm), log2M));
-    const int k = __float2int_rd(__fmaf_rd(-0x1.0000060000000p-1F, __log2f(vecnrm), log2M));
+    const int k = __float2int_rd(__fmaf_rd(minus_half, __log2f(vecnrm), log2M));
     return min(__float2int_rd(log2M - 1.0f), k) - Tilogb<float>(amax);
 }
 

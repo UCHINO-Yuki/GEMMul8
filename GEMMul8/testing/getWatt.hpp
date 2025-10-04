@@ -1,9 +1,9 @@
 #pragma once
+#include "cuda_impl.hpp"
 #include <chrono>
 #include <ctime>
 #include <fstream>
 #include <iostream>
-#include <nvml.h>
 #include <sstream>
 #include <thread>
 #include <vector>
@@ -11,11 +11,9 @@
 namespace getWatt {
 
 double get_current_power(const unsigned gpu_id) {
-    nvmlDevice_t device;
-    nvmlDeviceGetHandleByIndex(gpu_id, &device);
-    unsigned int power;
-    nvmlDeviceGetPowerUsage(device, &power);
-    return power / 1000.0;
+    double power_val;
+    GET_DEV_POWER(gpu_id, power_val);
+    return power_val;
 }
 
 struct PowerProfile {
@@ -33,24 +31,11 @@ double get_elapsed_time(const std::vector<PowerProfile> &profiling_data_list) {
 std::vector<PowerProfile> getGpuPowerUsage(const std::function<void(void)> func, const std::time_t interval) {
     std::vector<PowerProfile> profiling_result;
 
-    nvmlReturn_t result;
+    NVML_INIT;
 
-    result = nvmlInit();
-    if (result != NVML_SUCCESS) {
-        std::cerr << "Failed to initialize NVML: " << nvmlErrorString(result) << std::endl;
-    }
-
-    unsigned int deviceCount;
-    result = nvmlDeviceGetCount(&deviceCount);
-    if (result != NVML_SUCCESS) {
-        std::cerr << "Failed to device count: " << nvmlErrorString(result) << std::endl;
-    }
-
-    int gpu_id = 0;
-
+    int gpu_id     = 0;
     unsigned count = 0;
-
-    int semaphore = 1;
+    int semaphore  = 1;
 
     std::thread thread([&]() {
         func();
@@ -75,7 +60,6 @@ std::vector<PowerProfile> getGpuPowerUsage(const std::function<void(void)> func,
     } while (semaphore);
 
     thread.join();
-
     nvmlShutdown();
 
     return profiling_result;
