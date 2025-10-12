@@ -132,6 +132,25 @@ The hook mode works transparently: existing calls to cuBLAS GEMM will use the em
 
 You can switch back to standard cuBLAS by not setting LD_PRELOAD.
 
+You can change environment vars in your code as follows:
+
+```
+unsinged num_moduli = XX; // user-specified
+bool fastmode = XX; // user-specified
+
+// convert to char*
+char buffer_nm[12];
+snprintf(buffer_nm, sizeof(buffer_nm), "%u", num_moduli);
+const char* bool_str = (fastmode ? "1" : "0");
+
+// set/change environment vars for DGEMM
+setenv("NUM_MODULI_D", buffer_nm, 1);
+setenv("FASTMODE_D", bool_str, 1);
+
+// run gemm
+cublasDgemm_v2(...);
+```
+
 ## Numerical results
 
 The constant $\phi$ controls the difficulty of matrix multiplication (exponent distribution of input matrices).
