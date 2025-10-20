@@ -1,18 +1,14 @@
+#include "../include/gemmul8.hpp" // gemmul8::gemm, gemmul8::workSize
 #include <algorithm>
 #include <cstdlib>
-#include <cublas_v2.h>
-#include <cuda_runtime.h>
 #include <dlfcn.h>
 #include <iostream>
 #include <string>
-#include <vector>
 
-#include "../include/gemmul8.hpp" // gemmul8::gemm, gemmul8::workSize
-
+namespace {
 // ==========================================
 // get environment variable
 // ==========================================
-namespace {
 static inline void get_env_d(unsigned &num_moduli, bool &fastmode) {
     const char *nm = getenv("NUM_MODULI_D");
     const char *fm = getenv("FASTMODE_D");
@@ -26,18 +22,14 @@ static inline void get_env_s(unsigned &num_moduli, bool &fastmode) {
     num_moduli     = (nm ? std::stoi(nm) : 8);
     fastmode       = (fm ? std::string(fm) == std::string("1") : false);
 }
-} // namespace
 
 // ==========================================
 // cache
 // ==========================================
-namespace {
 static void *cached_work                   = nullptr;
 static size_t cached_size                  = 0;
 static std::vector<cublasHandle_t> handles = {};
-} // namespace
 
-namespace {
 static cublasStatus_t get_work(size_t req_size, void **work_ptr) {
     if (req_size == 0) {
         *work_ptr = nullptr;
@@ -73,16 +65,12 @@ static void cleanup_work() {
         cached_size = 0;
     }
 }
-
-// __attribute__((destructor)) static void at_exit() {
-//     cleanup_work();
-// }
 } // namespace
 
 // =======================
 // Hook: cublasDestroy
 // =======================
-cublasStatus_t cublasDestroy_v2(cublasHandle_t handle) {
+extern "C" cublasStatus_t cublasDestroy_v2(cublasHandle_t handle) {
 #ifdef __CUDA_ARCH__
     return CUBLAS_STATUS_NOT_SUPPORTED;
 #else

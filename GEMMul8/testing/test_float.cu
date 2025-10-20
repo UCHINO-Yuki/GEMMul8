@@ -2,6 +2,7 @@
 #include "eval.hpp"
 #include "getWatt.hpp"
 #include "make_matrix.hpp"
+#include "self_hipify.hpp"
 #include <fstream>
 #include <functional>
 #include <iomanip>

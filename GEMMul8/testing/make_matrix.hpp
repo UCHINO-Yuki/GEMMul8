@@ -1,5 +1,5 @@
 #pragma once
-#include "cuda_impl.hpp"
+#include "self_hipify.hpp"
 
 namespace makemat {
 

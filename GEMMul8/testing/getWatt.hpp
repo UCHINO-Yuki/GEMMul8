@@ -1,8 +1,9 @@
 #pragma once
-#include "cuda_impl.hpp"
+#include "self_hipify.hpp"
 #include <chrono>
 #include <ctime>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <sstream>
 #include <thread>
@@ -10,73 +11,81 @@
 
 namespace getWatt {
 
-double get_current_power(const unsigned gpu_id) {
-    double power_val;
-    GET_DEV_POWER(gpu_id, power_val);
-    return power_val;
-}
-
 struct PowerProfile {
     double power;
     std::time_t timestamp;
 };
 
-double get_elapsed_time(const std::vector<PowerProfile> &profiling_data_list) {
-    if (profiling_data_list.size() == 0) {
-        return 0.0;
+inline void gpu_power_init() {
+    nvmlReturn_t result = nvmlInit();
+    if (result != NVML_SUCCESS) {
+        std::cerr << "Failed to initialize Management Library: " << nvmlErrorString(result) << std::endl;
     }
-    return (profiling_data_list[profiling_data_list.size() - 1].timestamp - profiling_data_list[0].timestamp) * 1.e-6;
 }
 
-std::vector<PowerProfile> getGpuPowerUsage(const std::function<void(void)> func, const std::time_t interval) {
-    std::vector<PowerProfile> profiling_result;
+inline double get_current_power(unsigned gpu_id) {
+    nvmlDevice_t device;
+    nvmlReturn_t result = nvmlDeviceGetHandleByIndex_v2(gpu_id, &device);
+    if (result != NVML_SUCCESS) {
+        std::cerr << "Failed to get GPU handle:" << nvmlErrorString(result) << std::endl;
+        return 0.0;
+    }
+    unsigned int mw;
+    result = nvmlDeviceGetPowerUsage(device, &mw);
+    if (result != NVML_SUCCESS) {
+        std::cerr << "Failed to get power usage: " << nvmlErrorString(result) << std::endl;
+        return 0.0;
+    }
+    return mw / 1000.0;
+}
 
-    NVML_INIT;
+std::vector<PowerProfile> getGpuPowerUsage(const std::function<void(void)> func, const std::time_t interval) //
+{
+    gpu_power_init();
 
-    int gpu_id     = 0;
-    unsigned count = 0;
-    int semaphore  = 1;
+    std::vector<PowerProfile> prof_res;
+    unsigned gpu_id = 0;
+    unsigned count  = 0;
+    bool running    = true;
 
-    std::thread thread([&]() {
+    std::thread worker([&]() {
         func();
-        semaphore = 0;
+        running = false;
     });
 
-    const auto start_clock = std::chrono::high_resolution_clock::now();
+    const auto start = std::chrono::high_resolution_clock::now();
     do {
-        const auto end_clock    = std::chrono::high_resolution_clock::now();
-        const auto elapsed_time = std::chrono::duration_cast<std::chrono::microseconds>(end_clock - start_clock).count();
-
-        const auto power = get_current_power(gpu_id);
-
-        const auto end_clock_1    = std::chrono::high_resolution_clock::now();
-        const auto elapsed_time_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end_clock_1 - start_clock).count();
-
-        profiling_result.push_back(PowerProfile{power, elapsed_time});
+        const auto now_1          = std::chrono::high_resolution_clock::now();
+        const auto elapsed_time_1 = std::chrono::duration_cast<std::chrono::microseconds>(now_1 - start).count();
+        const auto power          = get_current_power(gpu_id);
+        const auto now_2          = std::chrono::high_resolution_clock::now();
+        const auto elapsed_time_2 = std::chrono::duration_cast<std::chrono::milliseconds>(now_2 - start).count();
+        prof_res.push_back(PowerProfile{power, elapsed_time_1});
 
         using namespace std::chrono_literals;
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::max<std::time_t>(static_cast<int>(interval) * count, elapsed_time_1) - elapsed_time_1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::max<std::time_t>(static_cast<int>(interval) * count, elapsed_time_2) - elapsed_time_2));
         count++;
-    } while (semaphore);
+    } while (running);
 
-    thread.join();
+    worker.join();
     nvmlShutdown();
-
-    return profiling_result;
+    return prof_res;
 }
 
-double get_integrated_power_consumption(const std::vector<PowerProfile> &profiling_data_list) {
-    if (profiling_data_list.size() == 0) {
-        return 0.0;
-    }
+double get_integrated_power_consumption(const std::vector<PowerProfile> &list) {
+    if (list.empty()) return 0.0;
 
     double power_consumption = 0.;
-    for (unsigned i = 1; i < profiling_data_list.size(); i++) {
-        const auto elapsed_time = (profiling_data_list[i].timestamp - profiling_data_list[i - 1].timestamp) * 1e-6;
-        // trapezoidal integration
-        power_consumption += (profiling_data_list[i].power + profiling_data_list[i - 1].power) / 2 * elapsed_time;
+    for (unsigned i = 1; i < list.size(); i++) {
+        const auto elapsed_time = (list[i].timestamp - list[i - 1].timestamp) * 1e-6;
+        power_consumption += (list[i].power + list[i - 1].power) / 2 * elapsed_time;
     }
     return power_consumption;
+}
+
+double get_elapsed_time(const std::vector<PowerProfile> &list) {
+    if (list.empty()) return 0.0;
+    return (list.back().timestamp - list.front().timestamp) * 1.e-6;
 }
 
 //=================================================================
@@ -89,14 +98,14 @@ std::vector<double> getWatt(const std::function<void(void)> func, const size_t m
     powerUsages = getGpuPowerUsage(
         [&]() {
             cudaDeviceSynchronize();
-            const auto start_clock = std::chrono::system_clock::now();
+            const auto start = std::chrono::system_clock::now();
             while (true) {
                 func();
                 if (((++cnt) % 10) == 0) {
                     cudaDeviceSynchronize();
-                    const auto current_clock = std::chrono::system_clock::now();
+                    const auto now = std::chrono::system_clock::now();
                     const auto elapsed_time =
-                        std::chrono::duration_cast<std::chrono::microseconds>(current_clock - start_clock).count() * 1e-6;
+                        std::chrono::duration_cast<std::chrono::microseconds>(now - start).count() * 1e-6;
                     if (elapsed_time > duration_time) {
                         break;
                     }

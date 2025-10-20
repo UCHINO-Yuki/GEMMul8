@@ -1,362 +1,382 @@
 #pragma once
-#include "cuda_impl.hpp"
+#if defined(__NVCC__)
+    #include <cuComplex.h>
+    #include <cublas_v2.h>
+    #include <cuda_runtime.h>
+#endif
+#include "self_hipify.hpp"
 #include "table.hpp"
+#include <algorithm>
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <dlfcn.h>
+#include <iostream>
 #include <random>
+#include <string>
 #include <vector>
 
-#define minus_half -0x1.0000060000000p-1F
+namespace oz2 {
 
-namespace oz2_const {
+size_t grid_invscal;
+size_t grid_conv32i8u;
+inline constexpr size_t threads_scaling      = 256;
+inline constexpr size_t threads_conv32i8u    = 256;
+inline constexpr size_t threads_invscal      = 128;
+inline constexpr unsigned TILE_DIM           = 16;
+inline constexpr unsigned LOG2_TILE_DIM      = 4;
+inline constexpr bool USE_CHAR4              = false;
+inline constexpr unsigned CHAR4_PER_ROW      = TILE_DIM / 4;
+inline constexpr unsigned LOG2_CHAR4_PER_ROW = LOG2_TILE_DIM - 2;
 
-size_t grids_invscaling;
-size_t grids_conv32i8u;
-
-size_t threads_scaling;
-size_t threads_conv32i8u;
-size_t threads_invscaling;
-
-} // namespace oz2_const
-
-namespace oz2_util {
-template <typename T>
-struct Vec4 {
-    T x, y, z, w;
+template <typename T> struct threshold;
+template <> struct threshold<double> {
+    static constexpr unsigned x = 12u;
+    static constexpr unsigned y = 18u;
+    static constexpr unsigned z = 25u;
+};
+template <> struct threshold<float> {
+    static constexpr unsigned x = 5u;
+    static constexpr unsigned y = 11u;
+    static constexpr unsigned z = 28u;
 };
 
-template <typename T> bool is_pow2(T n) {
-    if (n == 0) return false;
-    return (n & (n - 1)) == 0;
-}
+// calculate work size
+inline size_t calc_ld8i(const size_t n) { return TILE_DIM * ((n + (TILE_DIM - 1)) / TILE_DIM); }
+inline size_t calc_ld32i(const size_t n) { return TILE_DIM * ((n + (TILE_DIM - 1)) / TILE_DIM); }
+inline size_t calc_sizevec(const size_t n) { return (((n + 15) >> 4) << 4); }
 
+// define data type
+template <typename T> struct Vec4Type;
+template <> struct Vec4Type<double> {
+#if CUBLAS_VER_MAJOR >= 13
+    using type = double4_32a;
+#else
+    using type = double4;
+#endif
+};
+template <> struct Vec4Type<float> {
+    using type = float4;
+};
+template <typename T> using Vec4 = typename Vec4Type<T>::type;
+
+// template math funcs
 template <typename T> __forceinline__ __device__ T Tabs(T in);
-template <> __forceinline__ __device__ double Tabs<double>(double in) { return fabs(in); };
-template <> __forceinline__ __device__ float Tabs<float>(float in) { return fabsf(in); };
-template <> __forceinline__ __device__ int32_t Tabs<int32_t>(int32_t in) { return abs(in); };
+template <> __forceinline__ __device__ double Tabs<double>(double in) { return fabs(in); }
+template <> __forceinline__ __device__ float Tabs<float>(float in) { return fabsf(in); }
+template <> __forceinline__ __device__ int32_t Tabs<int32_t>(int32_t in) { return abs(in); }
 
 template <typename T> __forceinline__ __device__ int Tilogb(T in);
-template <> __forceinline__ __device__ int Tilogb<double>(double in) { return (in == 0.0) ? 0 : ilogb(in); };
-template <> __forceinline__ __device__ int Tilogb<float>(float in) { return (in == 0.0F) ? 0 : ilogbf(in); };
-
-template <typename T> __forceinline__ __device__ T Tzero() { return 0; };
-template <> __forceinline__ __device__ double Tzero<double>() { return 0.0; };
-template <> __forceinline__ __device__ float Tzero<float>() { return 0.0F; };
-template <> __forceinline__ __device__ int32_t Tzero<int32_t>() { return 0; };
-
-template <typename T> __forceinline__ __device__ T __Tfma_ru(T in1, T in2, T in3);
-template <> __forceinline__ __device__ double __Tfma_ru<double>(double in1, double in2, double in3) { return __fma_ru(in1, in2, in3); };
-template <> __forceinline__ __device__ float __Tfma_ru<float>(float in1, float in2, float in3) { return __fmaf_ru(in1, in2, in3); };
-
-template <typename T> __forceinline__ __device__ T __Tadd_ru(T in1, T in2);
-template <> __forceinline__ __device__ double __Tadd_ru<double>(double in1, double in2) { return __dadd_ru(in1, in2); };
-template <> __forceinline__ __device__ float __Tadd_ru<float>(float in1, float in2) { return __fadd_ru(in1, in2); };
-
-template <typename T> __forceinline__ __device__ T Tcast(double in);
-template <> __forceinline__ __device__ double Tcast<double>(double in) { return in; };
-template <> __forceinline__ __device__ float Tcast<float>(double in) { return __double2float_rn(in); };
+template <> __forceinline__ __device__ int Tilogb<double>(double in) { return (in == 0.0) ? 0 : ilogb(in); }
+template <> __forceinline__ __device__ int Tilogb<float>(float in) { return (in == 0.0F) ? 0 : ilogbf(in); }
 
 template <typename T> __forceinline__ __device__ T Tfma(const T in1, T in2, T in3);
-template <> __forceinline__ __device__ double Tfma<double>(const double in1, double in2, double in3) {
-    return fma(in1, in2, in3);
+template <> __forceinline__ __device__ double Tfma<double>(const double in1, double in2, double in3) { return fma(in1, in2, in3); }
+template <> __forceinline__ __device__ float Tfma<float>(const float in1, float in2, float in3) { return __fmaf_rn(in1, in2, in3); }
+
+template <typename T> __forceinline__ __device__ T __Tfma_ru(T in1, T in2, T in3);
+template <> __forceinline__ __device__ double __Tfma_ru<double>(double in1, double in2, double in3) { return __fma_ru(in1, in2, in3); }
+template <> __forceinline__ __device__ float __Tfma_ru<float>(float in1, float in2, float in3) { return __fmaf_ru(in1, in2, in3); }
+
+template <typename T> __forceinline__ __device__ T __Tadd_ru(T in1, T in2);
+template <> __forceinline__ __device__ double __Tadd_ru<double>(double in1, double in2) { return __dadd_ru(in1, in2); }
+template <> __forceinline__ __device__ float __Tadd_ru<float>(float in1, float in2) { return __fadd_ru(in1, in2); }
+
+template <typename T> __forceinline__ __device__ T Tcast(double in);
+template <> __forceinline__ __device__ double Tcast<double>(double in) { return in; }
+template <> __forceinline__ __device__ float Tcast<float>(double in) { return __double2float_rn(in); }
+
+template <typename T> __forceinline__ __device__ T Tscalbn(T in, int sft);
+template <> __forceinline__ __device__ double Tscalbn<double>(double in, int sft) { return scalbn(in, sft); }
+template <> __forceinline__ __device__ float Tscalbn<float>(float in, int sft) { return scalbnf(in, sft); }
+
+template <typename T> struct samesize_int;
+template <> struct samesize_int<int32_t> {
+    using type = int32_t;
 };
-template <> __forceinline__ __device__ float Tfma<float>(const float in1, float in2, float in3) {
-    return __fmaf_rn(in1, in2, in3);
+template <> struct samesize_int<int64_t> {
+    using type = int64_t;
+};
+template <> struct samesize_int<float> {
+    using type = int32_t;
+};
+template <> struct samesize_int<double> {
+    using type = int64_t;
+};
+template <typename T> using intT = typename samesize_int<T>::type;
+
+template <typename T> struct samesize_fp;
+template <> struct samesize_fp<int32_t> {
+    using type = float;
+};
+template <> struct samesize_fp<int64_t> {
+    using type = double;
+};
+template <> struct samesize_fp<float> {
+    using type = float;
+};
+template <> struct samesize_fp<double> {
+    using type = double;
+};
+template <typename T> using fpT = typename samesize_fp<T>::type;
+
+template <typename T> __forceinline__ __device__ intT<T> __fp_as_int(T in);
+template <> __forceinline__ __device__ intT<double> __fp_as_int<double>(double in) { return __double_as_longlong(in); }
+template <> __forceinline__ __device__ intT<float> __fp_as_int<float>(float in) { return __float_as_int(in); }
+
+template <typename T> __forceinline__ __device__ fpT<T> __int_as_fp(intT<T> in);
+template <> __forceinline__ __device__ fpT<double> __int_as_fp<double>(intT<double> in) { return __longlong_as_double(in); }
+template <> __forceinline__ __device__ fpT<float> __int_as_fp<float>(intT<float> in) { return __int_as_float(in); }
+
+template <typename T> __forceinline__ __device__ intT<T> extract_sign(intT<T> in);
+template <> __forceinline__ __device__ intT<double> extract_sign<double>(intT<double> in) { return in & 0x8000000000000000LL; }
+template <> __forceinline__ __device__ intT<float> extract_sign<float>(intT<float> in) { return in & 0x80000000; }
+
+template <typename T> __forceinline__ __device__ intT<T> extract_exp(intT<T> in);
+template <> __forceinline__ __device__ intT<double> extract_exp<double>(intT<double> in) { return (in >> 52) & 0x7FF; }
+template <> __forceinline__ __device__ intT<float> extract_exp<float>(intT<float> in) { return (in >> 23) & 0xFF; }
+
+template <typename T> __forceinline__ __device__ intT<T> extract_significand(intT<T> in);
+template <> __forceinline__ __device__ intT<double> extract_significand<double>(intT<double> in) { return in & 0x000FFFFFFFFFFFFFULL; }
+template <> __forceinline__ __device__ intT<float> extract_significand<float>(intT<float> in) { return in & 0x007FFFFF; }
+
+template <typename T> __forceinline__ __device__ int32_t countlz(intT<T> in);
+template <> __forceinline__ __device__ int32_t countlz<double>(intT<double> in) { return __clzll(in); }
+template <> __forceinline__ __device__ int32_t countlz<float>(intT<float> in) { return __clz(in); }
+
+template <typename T> struct fp;
+template <> struct fp<double> {
+    static constexpr int32_t bias = 1023;
+    static constexpr int32_t prec = 52;
+    static constexpr int32_t bits = 64;
+};
+template <> struct fp<float> {
+    static constexpr int32_t bias = 127;
+    static constexpr int32_t prec = 23;
+    static constexpr int32_t bits = 32;
 };
 
-template <typename T, int N> __forceinline__ __device__ void inner_warp_max(T &amax) {
+template <typename T> struct Tzero {
+    static constexpr T value = static_cast<T>(0);
+};
+
+template <typename T> struct Tone {
+    static constexpr T value = static_cast<T>(1);
+};
+
+template <typename T> struct Tmone {
+    static constexpr T value = static_cast<T>(-1);
+};
+
+// warp reduction
+template <typename T, int width = 32> __forceinline__ __device__ T inner_warp_max(T amax) {
 #pragma unroll
-    for (int offset = N; offset > 0; offset >>= 1) {
-        amax = max(amax, __shfl_down_sync(FULL_MASK, amax, offset));
+    for (unsigned i = width / 2; i > 0; i >>= 1) {
+        amax = max(amax, __shfl_down_sync(0xFFFFFFFFu, amax, i, width));
     }
-}
-template <int N> __forceinline__ __device__ void inner_warp_sum(double &sum) {
-#pragma unroll
-    for (int offset = N; offset > 0; offset >>= 1) {
-        sum = __dadd_ru(sum, __shfl_down_sync(FULL_MASK, sum, offset));
-    }
-}
-template <int N> __forceinline__ __device__ void inner_warp_sum(float &sum) {
-#pragma unroll
-    for (int offset = N; offset > 0; offset >>= 1) {
-        sum = __fadd_ru(sum, __shfl_down_sync(FULL_MASK, sum, offset));
-    }
-}
-template <int N> __forceinline__ __device__ void inner_warp_sum(int32_t &sum) {
-#pragma unroll
-    for (int offset = N; offset > 0; offset >>= 1) {
-        sum += __shfl_down_sync(FULL_MASK, sum, offset);
-    }
+    return amax;
 }
 
+template <typename T, int width = 32> __forceinline__ __device__ T inner_warp_sum(T sum) {
+#pragma unroll
+    for (unsigned i = width / 2; i > 0; i >>= 1) {
+        sum = __Tadd_ru<T>(sum, __shfl_down_sync(0xFFFFFFFFu, sum, i, width));
+    }
+    return sum;
+}
+
+// get value from constant memory
 template <typename T> __device__ __forceinline__ oz2_table::tab_t<T> readtab(unsigned j);
 template <> __device__ __forceinline__ oz2_table::tab_t<double> readtab<double>(unsigned j) { return oz2_table::moduli_dev[j]; };
 template <> __device__ __forceinline__ oz2_table::tab_t<float> readtab<float>(unsigned j) { return oz2_table::modulif_dev[j]; };
 
 // calculate mod: a - round(a/p(j))*p(j)
-template <typename T, int MODE> __device__ __forceinline__ int8_t mod_8i(T a, oz2_table::tab_t<T> val);
-template <> __device__ __forceinline__ int8_t mod_8i<double, 1>(double a, oz2_table::tab_t<double> val) {
-    double tmp1 = fma(rint(a * val.y), val.x, a);
-    return static_cast<int8_t>(tmp1);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<float, 1>(float a, oz2_table::tab_t<float> val) {
-    float tmp1 = __fmaf_rn(rintf(a * val.y), val.x, a);
-    return static_cast<int8_t>(tmp1);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<double, 2>(double a, oz2_table::tab_t<double> val) {
-    float tmp1 = __double2float_rn(fma(rint(a * val.y), val.x, a));
-    float tmp2 = __fmaf_rn(rintf(tmp1 * val.w), val.z, tmp1);
-    return static_cast<int8_t>(tmp2);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<float, 2>(float a, oz2_table::tab_t<float> val) {
-    float tmp1 = __fmaf_rn(rintf(a * val.y), val.x, a);
-    float tmp2 = __fmaf_rn(rintf(tmp1 * val.y), val.x, tmp1);
-    return static_cast<int8_t>(tmp2);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<double, 3>(double a, oz2_table::tab_t<double> val) {
-    float tmp1 = __double2float_rn(fma(rint(a * val.y), val.x, a));
-    float tmp2 = __fmaf_rn(rintf(tmp1 * val.w), val.z, tmp1);
-    float tmp3 = __fmaf_rn(rintf(tmp2 * val.w), val.z, tmp2);
-    return static_cast<int8_t>(tmp3);
-}
-template <> __device__ __forceinline__ int8_t mod_8i<float, 3>(float a, oz2_table::tab_t<float> val) {
-    float tmp1 = __fmaf_rn(rintf(a * val.y), val.x, a);
-    float tmp2 = __fmaf_rn(rintf(tmp1 * val.y), val.x, tmp1);
-    float tmp3 = __fmaf_rn(rintf(tmp2 * val.y), val.x, tmp2);
-    return static_cast<int8_t>(tmp3);
-}
-
-//==========================
-// trunc(scalbn(in,sft))
-//==========================
-template <typename T> __forceinline__ __device__ T T2int_fp(T in, const int sft);
-template <>
-__forceinline__ __device__ double T2int_fp<double>(double in, const int sft) {
-    int64_t bits                = __double_as_longlong(in);
-    const int64_t sign          = bits & 0x8000000000000000LL;
-    const int exp_raw           = (int)((bits >> 52) & 0x7FF);
-    const int64_t mantissa_bits = bits & 0x000FFFFFFFFFFFFFULL;
-
-    if (exp_raw != 0) {
-        int final_exp = exp_raw + sft;
-        if (final_exp < 1023) {
-            return __longlong_as_double(sign);
-        }
-        if (final_exp >= 1075) {
-            bits = sign | (int64_t)final_exp << 52 | mantissa_bits;
-            return __longlong_as_double(bits);
-        }
-
-        const int64_t mantissa_full  = mantissa_bits | (1LL << 52);
-        const int chop_bits          = 1075 - final_exp;
-        const int64_t mask           = -1LL << chop_bits;
-        const int64_t final_mantissa = (mantissa_full & mask) & 0x000FFFFFFFFFFFFFULL;
-
-        bits = sign | (int64_t)final_exp << 52 | final_mantissa;
-        return __longlong_as_double(bits);
+template <typename T, int MODE>
+__device__ __forceinline__ int8_t mod_8i(T a, oz2_table::tab_t<T> val) //
+{
+    if constexpr (std::is_same_v<T, double> && MODE == 1) {
+        double tmp = fma(rint(a * val.y), val.x, a);
+        return static_cast<int8_t>(tmp);
     }
 
-    if (mantissa_bits == 0) {
+    float tmp;
+    if constexpr (std::is_same_v<T, double>) {
+        tmp = __double2float_rn(fma(rint(a * val.y), val.x, a));
+#pragma unroll
+        for (int i = 1; i < MODE; ++i) {
+            tmp = __fmaf_rn(rintf(tmp * val.w), val.z, tmp);
+        }
+    } else {
+        tmp = __fmaf_rn(rintf(a * val.y), val.x, a);
+#pragma unroll
+        for (int i = 1; i < MODE; ++i) {
+            tmp = __fmaf_rn(rintf(tmp * val.y), val.x, tmp);
+        }
+    }
+    return static_cast<int8_t>(tmp);
+}
+
+template <typename T> __device__ T T2int_fp(T in, const int sft) //
+{
+    intT<T> bits        = __fp_as_int<T>(in);
+    const intT<T> sign  = extract_sign<T>(bits);
+    int exp_biased      = (int)extract_exp<T>(bits);
+    intT<T> significand = extract_significand<T>(bits);
+
+    if (exp_biased != 0) {
+        exp_biased += sft;
+        if (exp_biased < fp<T>::bias) {
+            return __int_as_fp<T>(sign);
+        }
+        if (exp_biased >= (fp<T>::bias + fp<T>::prec)) {
+            bits = sign | ((intT<T>)exp_biased << fp<T>::prec) | significand;
+            return __int_as_fp<T>(bits);
+        }
+
+        significand |= ((intT<T>)1 << fp<T>::prec);
+        int chop_bits = (fp<T>::bias + fp<T>::prec) - exp_biased;
+        intT<T> mask  = (intT<T>)(-1) << chop_bits;
+        significand   = extract_significand<T>(significand & mask);
+        bits          = sign | (intT<T>)exp_biased << fp<T>::prec | significand;
+        return __int_as_fp<T>(bits);
+    }
+
+    if (significand == 0) {
         return in;
     }
 
-    const int lz = 12 - __clzll(mantissa_bits);
-    int e        = lz + sft;
+    int lz = (fp<T>::bits - fp<T>::prec) - countlz<T>(significand);
+    int e  = lz + sft;
 
-    if (e < 1023) {
-        return __longlong_as_double(sign);
+    if (e < fp<T>::bias) {
+        return __int_as_fp<T>(sign);
     }
 
-    const int64_t frac_full = (mantissa_bits << (2 - lz)) ^ (1LL << 52);
-    const int64_t mask      = -1LL << max(1075 - e, 0);
-
-    bits = sign | (int64_t)e << 52 | (frac_full & mask);
-    return __longlong_as_double(bits);
-}
-template <>
-__forceinline__ __device__ float T2int_fp<float>(float in, const int sft) {
-    int32_t bits                = __float_as_int(in);
-    const int32_t sign          = bits & 0x80000000;
-    const int exp_raw           = (bits >> 23) & 0xFF;
-    const int32_t mantissa_bits = bits & 0x007FFFFF;
-
-    if (exp_raw != 0) {
-        int final_exp = exp_raw + sft;
-        if (final_exp < 127) {
-            return __int_as_float(sign);
-        }
-        if (final_exp >= 150) {
-            bits = sign | final_exp << 23 | mantissa_bits;
-            return __int_as_float(bits);
-        }
-
-        const int32_t mantissa_full  = mantissa_bits | (1 << 23);
-        const int chop_bits          = 150 - final_exp;
-        const int32_t mask           = -1 << chop_bits;
-        const int32_t final_mantissa = (mantissa_full & mask) & 0x007FFFFF;
-
-        bits = sign | final_exp << 23 | final_mantissa;
-        return __int_as_float(bits);
-    }
-
-    if (mantissa_bits == 0) {
-        return in;
-    }
-
-    const int lz = 9 - __clz(mantissa_bits);
-    int e        = lz + sft;
-
-    if (e < 127) {
-        return __int_as_float(sign);
-    }
-
-    const int32_t frac_full = (mantissa_bits << (2 - lz)) ^ (1 << 23);
-    const int32_t mask      = -1 << max(150 - e, 0);
-
-    bits = sign | e << 23 | (frac_full & mask);
-    return __int_as_float(bits);
+    intT<T> frac_full = (significand << (2 - lz)) ^ ((intT<T>)1 << fp<T>::prec);
+    intT<T> mask      = (intT<T>)(-1) << max((intT<T>)(fp<T>::bias + fp<T>::prec - e), (intT<T>)0);
+    bits              = sign | (intT<T>)e << fp<T>::prec | (frac_full & mask);
+    return __int_as_fp<T>(bits);
 }
 
-//==========================
 // int8_t(ceil(scalbn(fabs(in),sft)))
-//==========================
-template <typename T> __forceinline__ __device__ int8_t T2int8i(T in, const int sft);
-template <> __forceinline__ __device__ int8_t T2int8i<double>(double in, const int sft) {
-    int64_t bits_full           = __double_as_longlong(in);
-    const int exp_biased        = (int)((bits_full >> 52) & 0x7FF);
-    const int64_t mantissa_bits = bits_full & 0x000FFFFFFFFFFFFFULL;
-    int64_t result;
+template <typename T> __device__ int8_t T2int8i(T in, const int sft) //
+{
+    intT<T> bits_full   = __fp_as_int<T>(in);
+    int exp_biased      = (int)extract_exp<T>(bits_full);
+    intT<T> significand = extract_significand<T>(bits_full);
+    intT<T> result;
 
     if (exp_biased != 0) {
-        const int64_t mantissa_full = mantissa_bits | (1LL << 52);
-        const int shift_amount      = 1075 - exp_biased - sft;
+        significand |= ((intT<T>)1 << fp<T>::prec);
+        int shift_amount = (fp<T>::bias + fp<T>::prec) - exp_biased - sft;
 
-        const int64_t divisor = 1LL << shift_amount;
-        result                = (mantissa_full + divisor - 1) >> shift_amount;
+        intT<T> divisor = (intT<T>)1 << shift_amount;
+        result          = (significand + divisor - 1) >> shift_amount;
         return static_cast<int8_t>(result);
     }
 
-    if (mantissa_bits == 0) {
-        return static_cast<int8_t>(0);
+    if (significand == 0) {
+        return Tzero<int8_t>::value;
     }
 
-    const int numzero           = 12 - __clzll(mantissa_bits);
-    const int64_t mantissa_full = mantissa_bits << (2 - numzero);
-    const int shift_amount      = 1075 - numzero - sft;
+    int lz = (fp<T>::bits - fp<T>::prec) - countlz<T>(significand);
+    significand <<= (2 - lz);
+    int shift_amount = (fp<T>::bias + fp<T>::prec) - lz - sft;
 
-    const int64_t divisor = 1LL << shift_amount;
-    result                = (mantissa_full + divisor - 1) >> shift_amount;
+    intT<T> divisor = (intT<T>)1 << shift_amount;
+    result          = (significand + divisor - 1) >> shift_amount;
     return static_cast<int8_t>(result);
-}
-template <> __forceinline__ __device__ int8_t T2int8i<float>(float in, const int sft) {
-    int32_t bits_full           = __float_as_int(in);
-    const int exp_biased        = (bits_full >> 23) & 0xFF;
-    const int32_t mantissa_bits = bits_full & 0x007FFFFFU;
-    int32_t result;
+};
 
-    if (exp_biased != 0) {
-        const int32_t mantissa_full = mantissa_bits | (1 << 23);
-        const int shift_amount      = 150 - exp_biased - sft;
-
-        const int32_t divisor = 1 << shift_amount;
-        result                = (mantissa_full + divisor - 1) >> shift_amount;
-        return static_cast<int8_t>(result);
-    }
-
-    if (mantissa_bits == 0) {
-        return static_cast<int8_t>(0);
-    }
-
-    const int numzero           = 9 - __clz(mantissa_bits);
-    const int32_t mantissa_full = mantissa_bits << (2 - numzero);
-    const int shift_amount      = 150 - numzero - sft;
-
-    const int32_t divisor = 1 << shift_amount;
-    result                = (mantissa_full + divisor - 1) >> shift_amount;
-    return static_cast<int8_t>(result);
-}
-
-// return max(abs(ptr[0:inc:length-1]))
-template <typename T>
-__device__ T find_amax(const T *const ptr,    //
-                       const unsigned length, //
-                       const unsigned inc,    // leading dimension
-                       T *shm)                // shared memory (workspace)
+// column-wise amax
+template <typename T> __device__ T find_amax(const T *const ptr,    //
+                                             const unsigned length, //
+                                             T *samax)              // shared memory (workspace)
 {
     // max in thread
-    T amax = Tzero<T>();
+    T amax = Tzero<T>::value;
     for (unsigned i = threadIdx.x; i < length; i += blockDim.x) {
-        T tmp = Tabs<T>(ptr[i * inc]);
+        T tmp = Tabs<T>(ptr[i]);
         amax  = max(amax, tmp);
     }
 
     // inner-warp reduction
-    inner_warp_max<T, 16>(amax);
+    amax = inner_warp_max(amax);
 
     // inner-threadblock reduction
-    if ((threadIdx.x & 0x1f) == 0) shm[threadIdx.x >> 5] = amax; // shm[warp-id] = max in warp
+    if ((threadIdx.x & 0x1f) == 0) samax[threadIdx.x >> 5] = amax; // samax[warp-id] = max in warp
 
     __syncthreads();
-    amax = Tzero<T>();
     if (threadIdx.x < 32) {
-        if (threadIdx.x < (blockDim.x >> 5)) amax = shm[threadIdx.x];
-        inner_warp_max<T, 16>(amax);
-        if (threadIdx.x == 0) shm[0] = amax;
+        if (threadIdx.x < (blockDim.x >> 5)) amax = samax[threadIdx.x];
+        amax = inner_warp_max(amax);
+        if (threadIdx.x == 0) samax[0] = amax;
     }
 
     __syncthreads();
-    return shm[0];
+    return samax[0];
 }
 
-// return max(abs(ptr[0:inc:length-1])) and sum_{i=0}^{length-1}(ptr[i]^2)
-template <typename T>
-__device__ T find_amax_and_nrm(const T *const ptr,    //
-                               const unsigned length, //
-                               const unsigned inc,    // leading dimension
-                               T *shm,                // shared memory (workspace)
-                               T &vecnrm)             // 2-norm^2
+// column-wise amax & sum of squares
+template <typename T> __device__ T find_amax_and_nrm(const T *const ptr,    //
+                                                     const unsigned length, //
+                                                     T *shm,                // shared memory (workspace)
+                                                     T &vecnrm)             // 2-norm^2
 {
-    T *shm1 = shm;
-    T *shm2 = shm + 32;
+    T *samax = shm;
+    T *ssum  = shm + 32;
 
     // max in thread
-    T amax = Tzero<T>();
-    T sum  = Tzero<T>();
+    T amax = Tzero<T>::value;
+    T sum  = Tzero<T>::value;
     for (unsigned i = threadIdx.x; i < length; i += blockDim.x) {
-        T tmp = Tabs<T>(ptr[i * inc]);
+        T tmp = Tabs<T>(ptr[i]);
         amax  = max(amax, tmp);
         sum   = __Tfma_ru<T>(tmp, tmp, sum); // round-up mode
     }
 
     // inner-warp reduction
-    inner_warp_max<T, 16>(amax);
-    inner_warp_sum<16>(sum);
+    amax = inner_warp_max(amax);
+    sum  = inner_warp_sum(sum);
 
     // inner-threadblock reduction
-    const auto id = (threadIdx.x & 0x1f);
-    if (id == 0) {
-        shm1[threadIdx.x >> 5] = amax; // shm[warp-id] = max in warp
-    } else if (id == 1) {
-        shm2[(threadIdx.x - 1) >> 5] = sum; // shm[warp-id] = sum in warp
+    if ((threadIdx.x & 31) == 0) {
+        samax[threadIdx.x >> 5] = amax; // samax[warp-id] = max in warp
+        ssum[threadIdx.x >> 5]  = sum;  // ssum[warp-id] = sum in warp
     }
 
     __syncthreads();
-    amax = Tzero<T>();
-    sum  = Tzero<T>();
+    sum = Tzero<T>::value;
     if (threadIdx.x < 32) {
-        if (threadIdx.x < (blockDim.x >> 5)) amax = shm1[threadIdx.x];
-        inner_warp_max<T, 16>(amax);
-        if (threadIdx.x == 0) shm1[0] = amax;
-    } else if (threadIdx.x < 64) {
-        if ((threadIdx.x - 32) < (blockDim.x >> 5)) sum = shm[threadIdx.x];
-        inner_warp_sum<16>(sum);
-        if (threadIdx.x == 32) shm2[0] = sum;
+        if (threadIdx.x < (blockDim.x >> 5)) {
+            amax = samax[threadIdx.x];
+            sum  = ssum[threadIdx.x];
+        }
+        amax = inner_warp_max(amax);
+        sum  = inner_warp_sum(sum);
+        if (threadIdx.x == 0) {
+            samax[0] = amax;
+            ssum[0]  = sum;
+        }
     }
 
     __syncthreads();
-    vecnrm = shm2[0];
-    return shm[0];
+    vecnrm = ssum[0];
+    return samax[0];
 }
-} // namespace oz2_util
+
+void timing(std::chrono::system_clock::time_point &time_stamp) {
+    cudaDeviceSynchronize();
+    time_stamp = std::chrono::system_clock::now();
+}
+
+void timing(std::chrono::system_clock::time_point &time_stamp, double &timer) {
+    cudaDeviceSynchronize();
+    std::chrono::system_clock::time_point time_now = std::chrono::system_clock::now();
+    timer += std::chrono::duration_cast<std::chrono::nanoseconds>(time_now - time_stamp).count();
+    time_stamp = time_now;
+}
+
+} // namespace oz2

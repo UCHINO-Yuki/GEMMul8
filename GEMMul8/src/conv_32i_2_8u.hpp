@@ -1,8 +1,7 @@
 #pragma once
 #include "common.hpp"
-#include "table.hpp"
 
-namespace oz2_util {
+namespace oz2 {
 
 namespace {
 __device__ __forceinline__ uint8_t mod_reduce(int32_t x,    // input
@@ -63,12 +62,12 @@ __inline__ void conv_32i_2_8u(const unsigned i,          //
                               uint8_t *const C8u)        // output
 {
     if (i == 0) {
-        conv_32i_2_8u_256_kernel<<<oz2_const::grids_conv32i8u, oz2_const::threads_conv32i8u>>>(sizeC >> 2, C32i, C8u);
+        conv_32i_2_8u_256_kernel<<<grid_conv32i8u, threads_conv32i8u>>>(sizeC >> 2, C32i, C8u);
     } else {
         const uint8_t modulus = static_cast<uint8_t>(-oz2_table::moduli[i].z);
         const int32_t invm    = oz2_table::invm_32i[i - 1];
-        conv_32i_2_8u_not256_kernel<<<oz2_const::grids_conv32i8u, oz2_const::threads_conv32i8u>>>(sizeC >> 2, C32i, modulus, invm, C8u);
+        conv_32i_2_8u_not256_kernel<<<grid_conv32i8u, threads_conv32i8u>>>(sizeC >> 2, C32i, modulus, invm, C8u);
     }
 }
 
-} // namespace oz2_util
+} // namespace oz2
