@@ -7,16 +7,20 @@
     #include <hipblas/hipblas.h>
     #include <hiprand/hiprand_kernel.h>
 
-    #define cublasCreate                   hipblasCreate
-    #define cublasDestroy                  hipblasDestroy
-    #define cublasHandle_t                 hipblasHandle_t
-    #define cublasOperation_t              hipblasOperation_t
-    #define cublasStatus_t                 hipblasStatus_t
-    #define cublasComputeType_t            hipblasComputeType_t
-    #define cublasGemmAlgo_t               hipblasGemmAlgo_t
-    #define CUBLAS_STATUS_SUCCESS          HIPBLAS_STATUS_SUCCESS
-    #define CUBLAS_STATUS_NOT_SUPPORTED    HIPBLAS_STATUS_NOT_SUPPORTED
-    #define cublasGemmEx                   hipblasGemmEx_v2
+    #define cublasCreate                hipblasCreate
+    #define cublasDestroy               hipblasDestroy
+    #define cublasHandle_t              hipblasHandle_t
+    #define cublasOperation_t           hipblasOperation_t
+    #define cublasStatus_t              hipblasStatus_t
+    #define cublasComputeType_t         hipblasComputeType_t
+    #define cublasGemmAlgo_t            hipblasGemmAlgo_t
+    #define CUBLAS_STATUS_SUCCESS       HIPBLAS_STATUS_SUCCESS
+    #define CUBLAS_STATUS_NOT_SUPPORTED HIPBLAS_STATUS_NOT_SUPPORTED
+    #if defined(HIPBLAS_V2)
+        #define cublasGemmEx hipblasGemmEx
+    #else
+        #define cublasGemmEx hipblasGemmEx_v2
+    #endif
     #define cublasSgemm_v2                 hipblasSgemm
     #define cublasDgemm_v2                 hipblasDgemm
     #define CUBLAS_OP_N                    HIPBLAS_OP_N
