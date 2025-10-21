@@ -104,8 +104,6 @@ Build for an AMD MI300X GPU (gfx942 architecture)
 make -j8 BACKEND=hip HIP_PATH=/opt/rocm GPU_ARCH=gfx942
 ```
 
-This builds the project using ROCm HIP toolkit installed in `/opt/rocm` targeting an AMD GPU with architecture `gfx942` (e.g., CDNA3).
-
 ### External Dependencies and Licenses
 
 - ozIMMU_EF is derived from [ozIMMU](https://github.com/enp1s0/ozIMMU) by Ootomo and [Accelerator for ozIMMU](https://github.com/RIKEN-RCCS/accelerator_for_ozIMMU) by RIKEN R-CCS.
@@ -219,7 +217,7 @@ Intercept standard GEMM calls automatically without modifying the application so
 2. Set the `LD_PRELOAD` environment variable.
 
 ```bash
-export LD_PRELOAD=/path/to/GEMMul8/lib/libgemmul8.so
+export LD_PRELOAD=/path-to-GEMMul8/lib/libgemmul8.so
 ```
 
 3. Run your application.
@@ -277,18 +275,18 @@ _Accuracy of DGEMM (top) and SGEMM (bottom) emulation for $m=n=1024$ on GH200. S
 
 ### Throughput performance
 
-![throughput_dgemm](./GEMMul8/testing/results_02/fig/oz2_results_d_time.png)
+![throughput_dgemm](./GEMMul8/testing/GEMMul8_numerical_results/results_02/fig/oz2_results_d_time.png)
 _Throughput performance of DGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
 
-![throughput_sgemm](./GEMMul8/testing/results_02/fig/oz2_results_f_time.png)
+![throughput_sgemm](./GEMMul8/testing/GEMMul8_numerical_results/results_02/fig/oz2_results_f_time.png)
 _Throughput performance of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
 
 ### Power efficiency
 
-![power_dgemm](./GEMMul8/testing/results_02/fig/oz2_results_d_watt.png)
+![power_dgemm](./GEMMul8/testing/GEMMul8_numerical_results/results_02/fig/oz2_results_d_watt.png)
 _Power efficiency of DGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
 
-![power_sgemm](./GEMMul8/testing/results_02/fig/oz2_results_f_watt.png)
+![power_sgemm](./GEMMul8/testing/GEMMul8_numerical_results/results_02/fig/oz2_results_f_watt.png)
 _Power efficiency of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
 
 ### Supplementary Experiment on a B200
@@ -312,6 +310,7 @@ _Power efficiency of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080
 - Patrick Gutsche (École Normale Supérieure de Lyon, France)
 - Prajval Kumar (Indian Institute of Science and Education Research, India)
 - Dr. William Dawson (RIKEN Center for Computational Science, Japan)
+- Dr. Toshiyuki Imamura (RIKEN Center for Computational Science, Japan)
 
 (Affiliations as of 2025)
 

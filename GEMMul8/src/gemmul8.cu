@@ -34,23 +34,23 @@ size_t workSize(const size_t m,            // Number of rows of C
 }
 
 template <typename T>
-std::vector<double> gemm_(cublasHandle_t handle,        // Handle to the cuBLAS library context
-                          const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
-                          const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
-                          const size_t m,               // Number of rows of C
-                          const size_t n,               // Number of columns of C
-                          const size_t k,               // Inner dimension <= 2^17
-                          const T *alpha,               // Scaling factor for op(A)*op(B)
-                          const T *const A,             // 1-D device array of dimensions lda*k (CUBLAS_OP_N) or lda*m (CUBLAS_OP_T)
-                          const size_t lda,             // Leading dimension of A
-                          const T *const B,             // 1-D device array of dimensions ldb*n (CUBLAS_OP_N) or ldb*k (CUBLAS_OP_T)
-                          const size_t ldb,             // Leading dimension of B
-                          const T *beta,                // Scaling factor for C
-                          T *const C,                   // 1-D device array of dimensions ldc*n
-                          const size_t ldc,             // Leading dimension of C
-                          const unsigned num_moduli,    // #moduli, 2 <= num_moduli <= 20
-                          const bool fastmode,          // false (accurate mode) or true (fast mode)
-                          void *const work)             // workspace allocated in advance
+__inline__ std::vector<double> gemm_(cublasHandle_t handle,        // Handle to the cuBLAS library context
+                                     const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
+                                     const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
+                                     const size_t m,               // Number of rows of C
+                                     const size_t n,               // Number of columns of C
+                                     const size_t k,               // Inner dimension <= 2^17
+                                     const T *alpha,               // Scaling factor for op(A)*op(B)
+                                     const T *const A,             // 1-D device array of dimensions lda*k (CUBLAS_OP_N) or lda*m (CUBLAS_OP_T)
+                                     const size_t lda,             // Leading dimension of A
+                                     const T *const B,             // 1-D device array of dimensions ldb*n (CUBLAS_OP_N) or ldb*k (CUBLAS_OP_T)
+                                     const size_t ldb,             // Leading dimension of B
+                                     const T *beta,                // Scaling factor for C
+                                     T *const C,                   // 1-D device array of dimensions ldc*n
+                                     const size_t ldc,             // Leading dimension of C
+                                     const unsigned num_moduli,    // #moduli, 2 <= num_moduli <= 20
+                                     const bool fastmode,          // false (accurate mode) or true (fast mode)
+                                     void *const work)             // workspace allocated in advance
 {
     //------------------------------
     // timer
