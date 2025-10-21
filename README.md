@@ -270,23 +270,23 @@ The difficulty of $\phi = 0.5$ is comparable to that of matrix multiplication in
 
 ### Accuracy
 
-![accuracy_dgemm](./GEMMul8/testing/results_02/fig/oz2_results_df_accuracy.png)
+![accuracy_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_df_accuracy.png)
 _Accuracy of DGEMM (top) and SGEMM (bottom) emulation for $m=n=1024$ on GH200. Solid lines represent results for $k=1024$, and dashed lines for $k=16384$._
 
 ### Throughput performance
 
-![throughput_dgemm](./GEMMul8/testing/GEMMul8_numerical_results/results_02/fig/oz2_results_d_time.png)
+![throughput_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_d_time.png)
 _Throughput performance of DGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
 
-![throughput_sgemm](./GEMMul8/testing/GEMMul8_numerical_results/results_02/fig/oz2_results_f_time.png)
+![throughput_sgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_f_time.png)
 _Throughput performance of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
 
 ### Power efficiency
 
-![power_dgemm](./GEMMul8/testing/GEMMul8_numerical_results/results_02/fig/oz2_results_d_watt.png)
+![power_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_d_watt.png)
 _Power efficiency of DGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
 
-![power_sgemm](./GEMMul8/testing/GEMMul8_numerical_results/results_02/fig/oz2_results_f_watt.png)
+![power_sgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_f_watt.png)
 _Power efficiency of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
 
 ### Supplementary Experiment on a B200
