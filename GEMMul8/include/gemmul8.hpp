@@ -9,37 +9,43 @@
 
 namespace gemmul8 {
 
-// workSize returns work size required in gemm
-// Usage:
-//  void *work;
-//  cudaMalloc(&work, workSize(m,n,k,num_moduli));
-size_t workSize(const size_t m,             // Number of rows of C
-                const size_t n,             // Number of columns of C
-                const size_t k,             // Inner dimension <= 2^17
-                const unsigned num_moduli); // #moduli, 2 <= num_moduli <= 20
+// workSize returns the required workspace size in bytes.
+size_t workSize(
+    const size_t m,                         // Number of rows of C
+    const size_t n,                         // Number of columns of C
+    const size_t k,                         // Inner dimension <= 2^17
+    const unsigned num_moduli,              // #moduli, 2 <= num_moduli <= 20
+    const bool enable_skip_scalA = false,   // [option] Reserve extra space for A to allow skip_scalA
+    const bool enable_skip_scalB = false,   // [option] Reserve extra space for B to allow skip_scalB
+    size_t *workSizeA            = nullptr, // [option] Output: workspace size used for A8i and sftA
+    size_t *workSizeB            = nullptr  // [option] Output: workspace size used for B8i and sftB
+);
 
-// gemm returns computation time in second of each part
-// Usage:
-//  std::vector<double> times = gemmul8::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, devA, m, devB, k, &beta, devC, m, num_moduli, fastmode, work);
-//  or
-//  gemmul8::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, devA, m, devB, k, &beta, devC, m, num_moduli, fastmode, work);
-template <typename T>
-std::vector<double> gemm(cublasHandle_t handle,        // Handle to the cuBLAS library context
-                         const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
-                         const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
-                         const size_t m,               // Number of rows of C
-                         const size_t n,               // Number of columns of C
-                         const size_t k,               // Inner dimension <= 2^17
-                         const T *alpha,               // Scaling factor for op(A)*op(B)
-                         const T *const A,             // 1-D device array of dimensions lda*k (CUBLAS_OP_N) or lda*m (CUBLAS_OP_T)
-                         const size_t lda,             // Leading dimension of A
-                         const T *const B,             // 1-D device array of dimensions ldb*n (CUBLAS_OP_N) or ldb*k (CUBLAS_OP_T)
-                         const size_t ldb,             // Leading dimension of B
-                         const T *beta,                // Scaling factor for C
-                         T *const C,                   // 1-D device array of dimensions ldc*n
-                         const size_t ldc,             // Leading dimension of C
-                         const unsigned num_moduli,    // #moduli, 2 <= num_moduli <= 20
-                         const bool fastmode,          // false (accurate mode) or true (fast mode)
-                         void *const work);            // workspace allocated in advance
+// gemm returns computation time in second of each computational phase
+template <typename T> std::vector<double> gemm(
+    cublasHandle_t handle,                  // Handle to the cuBLAS library context
+    const cublasOperation_t op_A,           // CUBLAS_OP_N or CUBLAS_OP_T
+    const cublasOperation_t op_B,           // CUBLAS_OP_N or CUBLAS_OP_T
+    const size_t m,                         // Number of rows of C
+    const size_t n,                         // Number of columns of C
+    const size_t k,                         // Inner dimension <= 2^17
+    const T *alpha,                         // Scaling factor for op(A)*op(B)
+    const T *const A,                       // 1-D device array of dimensions lda*k (CUBLAS_OP_N) or lda*m (CUBLAS_OP_T)
+    const size_t lda,                       // Leading dimension of A
+    const T *const B,                       // 1-D device array of dimensions ldb*n (CUBLAS_OP_N) or ldb*k (CUBLAS_OP_T)
+    const size_t ldb,                       // Leading dimension of B
+    const T *beta,                          // Scaling factor for C
+    T *const C,                             // 1-D device array of dimensions ldc*n
+    const size_t ldc,                       // Leading dimension of C
+    const unsigned num_moduli,              // #moduli, 2 <= num_moduli <= 20
+    const bool fastmode,                    // false (accurate mode) or true (fast mode)
+    void *const work,                       // Preallocated workspace
+    void *const workA            = nullptr, // [optional] Separate workspace for A (if nullptr, uses work)
+    void *const workB            = nullptr, // [optional] Separate workspace for B (if nullptr, uses work)
+    const bool enable_skip_scalA = false,   // [optional] Enables scaling-skip mechanism for A
+    const bool enable_skip_scalB = false,   // [optional] Enables scaling-skip mechanism for B
+    bool skip_scalA              = false,   // [optional] If true, skip preprocessing for A
+    bool skip_scalB              = false    // [optional] If true, skip preprocessing for B
+);
 
 } // namespace gemmul8

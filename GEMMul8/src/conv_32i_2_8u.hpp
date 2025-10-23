@@ -4,10 +4,11 @@
 namespace oz2 {
 
 namespace {
-__device__ __forceinline__ uint8_t mod_reduce(int32_t x,    // input
-                                              int32_t invp, // floor(2^32 / p - 1)
-                                              uint8_t p)    // modulus
-{
+__device__ __forceinline__ uint8_t mod_reduce(
+    int32_t x,    // input
+    int32_t invp, // floor(2^32 / p - 1)
+    uint8_t p     // modulus
+) {
     int32_t quot = __mulhi(x, invp); // the most significant 32-bit of x*invm
     x -= quot * p;
     int32_t ge = (x - p) >> 31;
@@ -18,10 +19,11 @@ __device__ __forceinline__ uint8_t mod_reduce(int32_t x,    // input
 };
 } // namespace
 
-__global__ void conv_32i_2_8u_256_kernel(const size_t sizeC,                     // ((m * n + 15) >> 4) << 4; // multiple of 16
-                                         const int32_t *const __restrict__ C32i, // input
-                                         uint8_t *const __restrict__ C8u)        // output
-{
+__global__ void conv_32i_2_8u_256_kernel(
+    const size_t sizeC,                     // ((m * n + 15) >> 4) << 4; // multiple of 16
+    const int32_t *const __restrict__ C32i, // input
+    uint8_t *const __restrict__ C8u         // output
+) {
     const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= sizeC) return;
 
@@ -35,12 +37,13 @@ __global__ void conv_32i_2_8u_256_kernel(const size_t sizeC,                    
     reinterpret_cast<uchar4 *>(C8u)[idx] = out;
 }
 
-__global__ void conv_32i_2_8u_not256_kernel(const size_t sizeC,                     // ((m * n + 15) >> 4) << 4; // multiple of 16
-                                            const int32_t *const __restrict__ C32i, // input
-                                            const uint8_t modulus,                  // <= 256
-                                            const int32_t invm,                     // 2^32 / modulus - 1
-                                            uint8_t *const __restrict__ C8u)        // output
-{
+__global__ void conv_32i_2_8u_not256_kernel(
+    const size_t sizeC,                     // ((m * n + 15) >> 4) << 4; // multiple of 16
+    const int32_t *const __restrict__ C32i, // input
+    const uint8_t modulus,                  // <= 256
+    const int32_t invm,                     // 2^32 / modulus - 1
+    uint8_t *const __restrict__ C8u         // output
+) {
     const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= sizeC) return;
 
@@ -56,11 +59,12 @@ __global__ void conv_32i_2_8u_not256_kernel(const size_t sizeC,                 
 }
 
 // interface!!
-__inline__ void conv_32i_2_8u(const unsigned i,          //
-                              const size_t sizeC,        // m*n/16*16
-                              const int32_t *const C32i, // input
-                              uint8_t *const C8u)        // output
-{
+__inline__ void conv_32i_2_8u(
+    const unsigned i,          //
+    const size_t sizeC,        // m*n/16*16
+    const int32_t *const C32i, // input
+    uint8_t *const C8u         // output
+) {
     if (i == 0) {
         conv_32i_2_8u_256_kernel<<<grid_conv32i8u, threads_conv32i8u>>>(sizeC >> 2, C32i, C8u);
     } else {

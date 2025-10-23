@@ -63,6 +63,10 @@ void test(char trans_a, char trans_b, int moduli, bool fastmode) {
 
     cudaStreamSynchronize(stream);
 
+    cublasDgemm(cublasH, TRANSA, TRANSB, M, N, K, &ALPHA, dat_A, LDA, dat_B, LDB, &BETA, dat_C, LDC);
+
+    cudaStreamSynchronize(stream);
+
     gemmul8::gemm(cublasH, TRANSA, TRANSB, M, N, K, &ALPHA, dat_A, LDA, dat_B, LDB, &BETA, dat_Cg, LDC, moduli, fastmode, WORK);
 
     cudaStreamSynchronize(stream);

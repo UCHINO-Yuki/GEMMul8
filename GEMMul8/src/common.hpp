@@ -40,13 +40,13 @@ template <> struct threshold<double> {
 template <> struct threshold<float> {
     static constexpr unsigned x = 5u;
     static constexpr unsigned y = 11u;
-    static constexpr unsigned z = 28u;
+    static constexpr unsigned z = 18u;
 };
 
 // calculate work size
-inline size_t calc_ld8i(const size_t n) { return TILE_DIM * ((n + (TILE_DIM - 1)) / TILE_DIM); }
-inline size_t calc_ld32i(const size_t n) { return TILE_DIM * ((n + (TILE_DIM - 1)) / TILE_DIM); }
-inline size_t calc_sizevec(const size_t n) { return (((n + 15) >> 4) << 4); }
+__inline__ size_t calc_ld8i(const size_t n) { return TILE_DIM * ((n + (TILE_DIM - 1)) / TILE_DIM); }
+__inline__ size_t calc_ld32i(const size_t n) { return TILE_DIM * ((n + (TILE_DIM - 1)) / TILE_DIM); }
+__inline__ size_t calc_sizevec(const size_t n) { return TILE_DIM * ((n + (TILE_DIM - 1)) / TILE_DIM); }
 
 // define data type
 template <typename T> struct Vec4Type;
@@ -291,10 +291,11 @@ template <typename T> __device__ int8_t T2int8i(T in, const int sft) //
 };
 
 // column-wise amax
-template <typename T> __device__ T find_amax(const T *const ptr,    //
-                                             const unsigned length, //
-                                             T *samax)              // shared memory (workspace)
-{
+template <typename T> __device__ T find_amax(
+    const T *const ptr,    //
+    const unsigned length, //
+    T *samax               // shared memory (workspace)
+) {
     // max in thread
     T amax = Tzero<T>::value;
     for (unsigned i = threadIdx.x; i < length; i += blockDim.x) {
@@ -320,11 +321,12 @@ template <typename T> __device__ T find_amax(const T *const ptr,    //
 }
 
 // column-wise amax & sum of squares
-template <typename T> __device__ T find_amax_and_nrm(const T *const ptr,    //
-                                                     const unsigned length, //
-                                                     T *shm,                // shared memory (workspace)
-                                                     T &vecnrm)             // 2-norm^2
-{
+template <typename T> __device__ T find_amax_and_nrm(
+    const T *const ptr,    //
+    const unsigned length, //
+    T *shm,                // shared memory (workspace)
+    T &vecnrm              // 2-norm^2
+) {
     T *samax = shm;
     T *ssum  = shm + 32;
 

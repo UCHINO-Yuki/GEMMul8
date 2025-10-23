@@ -6,12 +6,13 @@ namespace oz2 {
 namespace int8tc {
 
 template <typename T>
-__global__ void compute_sft_extract_kernel(const size_t m,                   // size(A,1)
-                                           const size_t k,                   // size(A,2)
-                                           const T *const A,                 // input (lda * k)
-                                           const size_t lda,                 // leading dimension
-                                           int16_t *const __restrict__ sftA) // exponent of shift values
-{
+__global__ void compute_sft_extract_kernel(
+    const size_t m,                  // size(A,1)
+    const size_t k,                  // size(A,2)
+    const T *const A,                // input (lda * k)
+    const size_t lda,                // leading dimension
+    int16_t *const __restrict__ sftA // exponent of shift values
+) {
     const auto block_base = blockIdx.x << LOG2_TILE_DIM;
     const auto row        = block_base + threadIdx.x;
 
@@ -39,14 +40,15 @@ __global__ void compute_sft_extract_kernel(const size_t m,                   // 
 
 // extract first 7-bit of A^T
 template <typename T>
-__global__ void extract_A8i_kernel(const size_t m,                   // size(A,1)
-                                   const size_t k,                   // size(A,2)
-                                   const T *const __restrict__ A,    // input (lda * k)
-                                   const size_t lda,                 // leading dimension
-                                   int8_t *const __restrict__ A8i,   // output (lda8i * m)
-                                   const size_t lda8i,               // leading dimension
-                                   int16_t *const __restrict__ sftA) // exponent of shift values
-{
+__global__ void extract_A8i_kernel(
+    const size_t m,                  // size(A,1)
+    const size_t k,                  // size(A,2)
+    const T *const __restrict__ A,   // input (lda * k)
+    const size_t lda,                // leading dimension
+    int8_t *const __restrict__ A8i,  // output (lda8i * m)
+    const size_t lda8i,              // leading dimension
+    int16_t *const __restrict__ sftA // exponent of shift values
+) {
     __shared__ int8_t tile[TILE_DIM][TILE_DIM + 1];
 
     const auto rowBase = blockIdx.x << LOG2_TILE_DIM;
@@ -100,13 +102,14 @@ __global__ void extract_A8i_kernel(const size_t m,                   // size(A,1
 
 // extract first 7-bit of B
 template <typename T>
-__global__ void extract_B8i_kernel(const size_t k,                   // size(B,1)
-                                   const T *const __restrict__ B,    // input (ldb * n)
-                                   const size_t ldb,                 // leading dimension
-                                   int8_t *const __restrict__ B8i,   // output (ldb8i * n)
-                                   const size_t ldb8i,               // leading dimension
-                                   int16_t *const __restrict__ sftB) // exponent of shift values
-{
+__global__ void extract_B8i_kernel(
+    const size_t k,                  // size(B,1)
+    const T *const __restrict__ B,   // input (ldb * n)
+    const size_t ldb,                // leading dimension
+    int8_t *const __restrict__ B8i,  // output (ldb8i * n)
+    const size_t ldb8i,              // leading dimension
+    int16_t *const __restrict__ sftB // exponent of shift values
+) {
     __shared__ T shm[32];
     const auto col_idx             = blockIdx.x;
     const T *const __restrict__ in = B + col_idx * ldb;
@@ -148,13 +151,14 @@ __forceinline__ __device__ int compute_sft(int amax, const float log2M) {
     return __float2int_rd(__fmaf_rd(-0x1.0000060000000p-1F, __log2f(__int2float_rn(amax)), log2M));
 }
 
-__global__ void compute_sft_scaling_rowwise_kernel(const size_t m,                  // size(C32i,1)
-                                                   const size_t n,                  // size(C32i,2)
-                                                   const int *const C32i,           // input (ldc32i * n)
-                                                   const size_t ldc32i,             // leading dimension
-                                                   int16_t *const __restrict__ sft, // exponent of shift values
-                                                   const float log2M)               // log2(M-1)/2 - 0.5
-{
+__global__ void compute_sft_scaling_rowwise_kernel(
+    const size_t m,                  // size(C32i,1)
+    const size_t n,                  // size(C32i,2)
+    const int *const C32i,           // input (ldc32i * n)
+    const size_t ldc32i,             // leading dimension
+    int16_t *const __restrict__ sft, // exponent of shift values
+    const float log2M                // log2(M-1)/2 - 0.5
+) {
     const auto block_base = blockIdx.x << LOG2_TILE_DIM;
     const auto row        = block_base + threadIdx.x;
 
@@ -180,12 +184,13 @@ __global__ void compute_sft_scaling_rowwise_kernel(const size_t m,              
     }
 }
 
-__global__ void compute_sft_scaling_colwise_kernel(const size_t m,                  // size(C32i,1)
-                                                   const int *const C32i,           // input (ldc32i * n)
-                                                   const size_t ldc32i,             // leading dimension
-                                                   int16_t *const __restrict__ sft, // exponent of shift values
-                                                   const float log2M)               // log2(M-1)/2 - 0.5
-{
+__global__ void compute_sft_scaling_colwise_kernel(
+    const size_t m,                  // size(C32i,1)
+    const int *const C32i,           // input (ldc32i * n)
+    const size_t ldc32i,             // leading dimension
+    int16_t *const __restrict__ sft, // exponent of shift values
+    const float log2M                // log2(M-1)/2 - 0.5
+) {
     __shared__ int shm[32];
     const auto col_idx = blockIdx.x;
     int sft_tmp        = sft[col_idx];
@@ -198,15 +203,16 @@ __global__ void compute_sft_scaling_colwise_kernel(const size_t m,              
 
 // convert trunc(B*diag(2^sftB)) to B8i
 template <typename T, int MODE>
-__global__ void scalingB_kernel(const size_t k,                   // size(B,1)
-                                const size_t incB8i,              // ldb8i * n
-                                const unsigned num_moduli,        // #moduli
-                                const T *const __restrict__ B,    // input (ldb * n)
-                                const size_t ldb,                 // leading dimension
-                                int8_t *const __restrict__ B8i,   // output (ldb8i * n)
-                                const size_t ldb8i,               // leading dimension
-                                int16_t *const __restrict__ sftB) // exponent of shift values
-{
+__global__ void scalingB_kernel(
+    const size_t k,                  // size(B,1)
+    const size_t incB8i,             // ldb8i * n
+    const unsigned num_moduli,       // #moduli
+    const T *const __restrict__ B,   // input (ldb * n)
+    const size_t ldb,                // leading dimension
+    int8_t *const __restrict__ B8i,  // output (ldb8i * n)
+    const size_t ldb8i,              // leading dimension
+    int16_t *const __restrict__ sftB // exponent of shift values
+) {
     const auto col_idx = blockIdx.x;
     const int sft      = -sftB[col_idx];
 
@@ -261,162 +267,181 @@ __global__ void scalingB_kernel(const size_t k,                   // size(B,1)
 }
 
 template <typename T>
-__forceinline__ void extract_8i_launch(const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
-                                       const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
-                                       const size_t m,               // Number of rows of C
-                                       const size_t n,               // Number of columns of C
-                                       const size_t k,               // Inner dimension
-                                       const T *const A,             // input
-                                       const size_t lda,             // leading dimension
-                                       const T *const B,             // input
-                                       const size_t ldb,             // leading dimension
-                                       int8_t *const A8i,            // output (lda8i * m)
-                                       const size_t lda8i,           // leading dimension
-                                       int16_t *const sftA,          // exponent of shift values for rows of A
-                                       int8_t *const B8i,            // output (ldb8i * n)
-                                       const size_t ldb8i,           // leading dimension
-                                       int16_t *const sftB)          // exponent of shift values for cols of B
-{
-    if (op_A == CUBLAS_OP_N) {
-        // m*k -> k*m
-        constexpr dim3 threads1(TILE_DIM, TILE_DIM);
-        dim3 grid((m + (TILE_DIM - 1)) / TILE_DIM, (lda8i + (TILE_DIM - 1)) / TILE_DIM);
-        compute_sft_extract_kernel<<<grid.x, threads1>>>(m, k, A, lda, sftA);
+__forceinline__ void extract_8i_launch(
+    const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
+    const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
+    const size_t m,               // Number of rows of C
+    const size_t n,               // Number of columns of C
+    const size_t k,               // Inner dimension
+    const T *const A,             // input
+    const size_t lda,             // leading dimension
+    const T *const B,             // input
+    const size_t ldb,             // leading dimension
+    int8_t *const A8i,            // output (lda8i * m)
+    const size_t lda8i,           // leading dimension
+    int16_t *const sftA,          // exponent of shift values for rows of A
+    int8_t *const B8i,            // output (ldb8i * n)
+    const size_t ldb8i,           // leading dimension
+    int16_t *const sftB,          // exponent of shift values for cols of B
+    const bool skip_scalA,        // false (unskip scaling_A) or true (skip scaling_A)
+    const bool skip_scalB         // false (unskip scaling_B) or true (skip scaling_B)
+) {
+    if (!skip_scalA) {
+        if (op_A == CUBLAS_OP_N) {
+            // m*k -> k*m
+            constexpr dim3 threads1(TILE_DIM, TILE_DIM);
+            dim3 grid((m + (TILE_DIM - 1)) / TILE_DIM, (lda8i + (TILE_DIM - 1)) / TILE_DIM);
+            compute_sft_extract_kernel<<<grid.x, threads1>>>(m, k, A, lda, sftA);
 
-        if constexpr (USE_CHAR4) {
-            constexpr dim3 threads2(TILE_DIM, CHAR4_PER_ROW);
-            extract_A8i_kernel<T><<<grid, threads2>>>(m, k, A, lda, A8i, lda8i, sftA);
+            if constexpr (USE_CHAR4) {
+                constexpr dim3 threads2(TILE_DIM, CHAR4_PER_ROW);
+                extract_A8i_kernel<T><<<grid, threads2>>>(m, k, A, lda, A8i, lda8i, sftA);
+            } else {
+                extract_A8i_kernel<T><<<grid, threads1>>>(m, k, A, lda, A8i, lda8i, sftA);
+            }
         } else {
-            extract_A8i_kernel<T><<<grid, threads1>>>(m, k, A, lda, A8i, lda8i, sftA);
+            // k*m -> k*m
+            extract_B8i_kernel<T><<<m, threads_scaling>>>(k, A, lda, A8i, lda8i, sftA);
         }
-    } else {
-        // k*m -> k*m
-        extract_B8i_kernel<T><<<m, threads_scaling>>>(k, A, lda, A8i, lda8i, sftA);
     }
 
-    if (op_B == CUBLAS_OP_N) {
-        // k*n -> k*n
-        extract_B8i_kernel<T><<<n, threads_scaling>>>(k, B, ldb, B8i, ldb8i, sftB);
-    } else {
-        // n*k -> k*n
-        constexpr dim3 threads1(TILE_DIM, TILE_DIM);
-        dim3 grid((n + (TILE_DIM - 1)) / TILE_DIM, (ldb8i + (TILE_DIM - 1)) / TILE_DIM);
-        compute_sft_extract_kernel<<<grid.x, threads1>>>(n, k, B, ldb, sftB);
-
-        if constexpr (USE_CHAR4) {
-            constexpr dim3 threads2(TILE_DIM, CHAR4_PER_ROW);
-            extract_A8i_kernel<T><<<grid, threads2>>>(n, k, B, ldb, B8i, ldb8i, sftB);
+    if (!skip_scalB) {
+        if (op_B == CUBLAS_OP_N) {
+            // k*n -> k*n
+            extract_B8i_kernel<T><<<n, threads_scaling>>>(k, B, ldb, B8i, ldb8i, sftB);
         } else {
-            extract_A8i_kernel<T><<<grid, threads1>>>(n, k, B, ldb, B8i, ldb8i, sftB);
+            // n*k -> k*n
+            constexpr dim3 threads1(TILE_DIM, TILE_DIM);
+            dim3 grid((n + (TILE_DIM - 1)) / TILE_DIM, (ldb8i + (TILE_DIM - 1)) / TILE_DIM);
+            compute_sft_extract_kernel<<<grid.x, threads1>>>(n, k, B, ldb, sftB);
+
+            if constexpr (USE_CHAR4) {
+                constexpr dim3 threads2(TILE_DIM, CHAR4_PER_ROW);
+                extract_A8i_kernel<T><<<grid, threads2>>>(n, k, B, ldb, B8i, ldb8i, sftB);
+            } else {
+                extract_A8i_kernel<T><<<grid, threads1>>>(n, k, B, ldb, B8i, ldb8i, sftB);
+            }
         }
     }
 }
 
 template <typename T, int MODE>
-__forceinline__ void scaling_launch(const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
-                                    const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
-                                    const size_t m,               // Number of rows of C
-                                    const size_t n,               // Number of columns of C
-                                    const size_t k,               // Inner dimension
-                                    const unsigned num_moduli,    // #moduli
-                                    const T *const A,             // input
-                                    const size_t lda,             // leading dimension
-                                    const T *const B,             // input
-                                    const size_t ldb,             // leading dimension
-                                    int8_t *const A8i,            // output (lda8i * m)
-                                    const size_t lda8i,           // leading dimension
-                                    const size_t incA8i,          // increment between the A8i
-                                    int16_t *const sftA,          // exponent of shift values for rows of A
-                                    int8_t *const B8i,            // output (ldb8i * n)
-                                    const size_t ldb8i,           // leading dimension
-                                    const size_t incB8i,          // increment between the B8i
-                                    int16_t *const sftB,          // exponent of shift values for cols of B
-                                    int32_t *const C32i,          // tmp (ldc32i * n)
-                                    const size_t ldc32i,          // ((m + 15) >> 4) << 4
-                                    const float log2M)            // fld(log2(M-1)/2 - 0.5)
-{
-    if (op_A == CUBLAS_OP_N) {
-        // m*k -> k*m
-        dim3 grid((m + (TILE_DIM - 1)) / TILE_DIM, (lda8i + (TILE_DIM - 1)) / TILE_DIM);
-        constexpr dim3 threads1(TILE_DIM, TILE_DIM);
-        compute_sft_scaling_rowwise_kernel<<<grid.x, threads1>>>(m, n, C32i, ldc32i, sftA, log2M);
+__forceinline__ void scaling_launch(
+    const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
+    const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
+    const size_t m,               // Number of rows of C
+    const size_t n,               // Number of columns of C
+    const size_t k,               // Inner dimension
+    const unsigned num_moduli,    // #moduli
+    const T *const A,             // input
+    const size_t lda,             // leading dimension
+    const T *const B,             // input
+    const size_t ldb,             // leading dimension
+    int8_t *const A8i,            // output (lda8i * m)
+    const size_t lda8i,           // leading dimension
+    const size_t incA8i,          // increment between the A8i
+    int16_t *const sftA,          // exponent of shift values for rows of A
+    int8_t *const B8i,            // output (ldb8i * n)
+    const size_t ldb8i,           // leading dimension
+    const size_t incB8i,          // increment between the B8i
+    int16_t *const sftB,          // exponent of shift values for cols of B
+    int32_t *const C32i,          // tmp (ldc32i * n)
+    const size_t ldc32i,          // ((m + 15) >> 4) << 4
+    const float log2M,            // fld(log2(M-1)/2 - 0.5)
+    const bool skip_scalA,        // false (unskip scaling_A) or true (skip scaling_A)
+    const bool skip_scalB         // false (unskip scaling_B) or true (skip scaling_B)
+) {
+    if (!skip_scalA) {
+        if (op_A == CUBLAS_OP_N) {
+            // m*k -> k*m
+            dim3 grid((m + (TILE_DIM - 1)) / TILE_DIM, (lda8i + (TILE_DIM - 1)) / TILE_DIM);
+            constexpr dim3 threads1(TILE_DIM, TILE_DIM);
+            compute_sft_scaling_rowwise_kernel<<<grid.x, threads1>>>(m, n, C32i, ldc32i, sftA, log2M);
 
-        if constexpr (USE_CHAR4) {
-            constexpr dim3 threads2(TILE_DIM, CHAR4_PER_ROW);
-            oz2::vecnorm::scalingA_kernel<T, MODE><<<grid, threads2>>>(m, k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA);
+            if constexpr (USE_CHAR4) {
+                constexpr dim3 threads2(TILE_DIM, CHAR4_PER_ROW);
+                oz2::vecnorm::scalingA_kernel<T, MODE><<<grid, threads2>>>(m, k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA);
+            } else {
+                oz2::vecnorm::scalingA_kernel<T, MODE><<<grid, threads1>>>(m, k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA);
+            }
         } else {
-            oz2::vecnorm::scalingA_kernel<T, MODE><<<grid, threads1>>>(m, k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA);
+            // k*m -> k*m
+            constexpr dim3 threads1(TILE_DIM, TILE_DIM);
+            compute_sft_scaling_rowwise_kernel<<<(m + (TILE_DIM - 1)) / TILE_DIM, threads1>>>(m, n, C32i, ldc32i, sftA, log2M);
+            scalingB_kernel<T, MODE><<<m, threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA);
         }
-    } else {
-        // k*m -> k*m
-        constexpr dim3 threads1(TILE_DIM, TILE_DIM);
-        compute_sft_scaling_rowwise_kernel<<<(m + (TILE_DIM - 1)) / TILE_DIM, threads1>>>(m, n, C32i, ldc32i, sftA, log2M);
-        scalingB_kernel<T, MODE><<<m, threads_scaling>>>(k, incA8i, num_moduli, A, lda, A8i, lda8i, sftA);
     }
 
-    if (op_B == CUBLAS_OP_N) {
-        // k*n -> k*n
-        compute_sft_scaling_colwise_kernel<<<n, threads_scaling>>>(m, C32i, ldc32i, sftB, log2M);
-        scalingB_kernel<T, MODE><<<n, threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB);
-    } else {
-        // n*k -> k*n
-        dim3 grid((n + (TILE_DIM - 1)) / TILE_DIM, (ldb8i + (TILE_DIM - 1)) / TILE_DIM);
-        compute_sft_scaling_colwise_kernel<<<n, threads_scaling>>>(m, C32i, ldc32i, sftB, log2M);
-
-        if constexpr (USE_CHAR4) {
-            constexpr dim3 threads2(TILE_DIM, CHAR4_PER_ROW);
-            oz2::vecnorm::scalingA_kernel<T, MODE><<<grid, threads2>>>(n, k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB);
+    if (!skip_scalB) {
+        if (op_B == CUBLAS_OP_N) {
+            // k*n -> k*n
+            compute_sft_scaling_colwise_kernel<<<n, threads_scaling>>>(m, C32i, ldc32i, sftB, log2M);
+            scalingB_kernel<T, MODE><<<n, threads_scaling>>>(k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB);
         } else {
-            constexpr dim3 threads2(TILE_DIM, TILE_DIM);
-            oz2::vecnorm::scalingA_kernel<T, MODE><<<grid, threads2>>>(n, k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB);
+            // n*k -> k*n
+            dim3 grid((n + (TILE_DIM - 1)) / TILE_DIM, (ldb8i + (TILE_DIM - 1)) / TILE_DIM);
+            compute_sft_scaling_colwise_kernel<<<n, threads_scaling>>>(m, C32i, ldc32i, sftB, log2M);
+
+            if constexpr (USE_CHAR4) {
+                constexpr dim3 threads2(TILE_DIM, CHAR4_PER_ROW);
+                oz2::vecnorm::scalingA_kernel<T, MODE><<<grid, threads2>>>(n, k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB);
+            } else {
+                constexpr dim3 threads2(TILE_DIM, TILE_DIM);
+                oz2::vecnorm::scalingA_kernel<T, MODE><<<grid, threads2>>>(n, k, incB8i, num_moduli, B, ldb, B8i, ldb8i, sftB);
+            }
         }
     }
 }
 
 template <typename T>
-__inline__ void scaling(cublasHandle_t handle,        // Handle to the cuBLAS library context
-                        const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
-                        const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
-                        const size_t m,               // Number of rows of C
-                        const size_t n,               // Number of columns of C
-                        const size_t k,               // Inner dimension
-                        const unsigned num_moduli,    // #moduli
-                        const T *const A,             // input
-                        const size_t lda,             // leading dimension
-                        const T *const B,             // input
-                        const size_t ldb,             // leading dimension
-                        int8_t *const A8i,            // output (lda8i * m)
-                        const size_t lda8i,           // leading dimension
-                        const size_t incA8i,          // increment between the A8i
-                        int16_t *const sftA,          // exponent of shift values for rows of A
-                        int8_t *const B8i,            // output (ldb8i * n)
-                        const size_t ldb8i,           // leading dimension
-                        const size_t incB8i,          // increment between the B8i
-                        int16_t *const sftB,          // exponent of shift values for cols of B
-                        int32_t *const C32i,          // tmp (ldc32i * n)
-                        const size_t ldc32i,          // ((m + 15) >> 4) << 4
-                        const unsigned table_idx)     //
-{
+__inline__ void scaling(
+    cublasHandle_t handle,        // Handle to the cuBLAS library context
+    const cublasOperation_t op_A, // CUBLAS_OP_N or CUBLAS_OP_T
+    const cublasOperation_t op_B, // CUBLAS_OP_N or CUBLAS_OP_T
+    const size_t m,               // Number of rows of C
+    const size_t n,               // Number of columns of C
+    const size_t k,               // Inner dimension
+    const unsigned num_moduli,    // #moduli
+    const T *const A,             // input
+    const size_t lda,             // leading dimension
+    const T *const B,             // input
+    const size_t ldb,             // leading dimension
+    int8_t *const A8i,            // output (lda8i * m)
+    int8_t *const A8i_high,       // work/output (lda8i * m)
+    const size_t lda8i,           // leading dimension
+    const size_t incA8i,          // increment between the A8i
+    int16_t *const sftA,          // exponent of shift values for rows of A
+    int8_t *const B8i,            // output (ldb8i * n)
+    int8_t *const B8i_high,       // work/output (lda8i * m)
+    const size_t ldb8i,           // leading dimension
+    const size_t incB8i,          // increment between the B8i
+    int16_t *const sftB,          // exponent of shift values for cols of B
+    int32_t *const C32i,          // tmp (ldc32i * n)
+    const size_t ldc32i,          // ((m + 15) >> 4) << 4
+    const unsigned table_idx,     //
+    const bool skip_scalA,        // false (unskip scaling_A) or true (skip scaling_A)
+    const bool skip_scalB         // false (unskip scaling_B) or true (skip scaling_B)
+) {
     // extract first 7-bit from A and B
-    extract_8i_launch<T>(op_A, op_B, m, n, k, A, lda, B, ldb, A8i, lda8i, sftA, B8i, ldb8i, sftB);
+    extract_8i_launch<T>(op_A, op_B, m, n, k, A, lda, B, ldb, A8i_high, lda8i, sftA, B8i_high, ldb8i, sftB, skip_scalA, skip_scalB);
 
     // C32i := A8i^T*B8i
     constexpr int32_t alpha = 1;
     constexpr int32_t beta  = 0;
     cudaDeviceSynchronize();
-    cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, ldc32i, n, lda8i, &alpha, A8i, CUDA_R_8I, lda8i, B8i, CUDA_R_8I, ldb8i, &beta, C32i, CUDA_R_32I, ldc32i, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+    cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, ldc32i, n, lda8i, &alpha, A8i_high, CUDA_R_8I, lda8i, B8i_high, CUDA_R_8I, ldb8i, &beta, C32i, CUDA_R_32I, ldc32i, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
 
     // extract high order bits from A and B
     const float log2M = oz2_table::int8tc::log2M[table_idx]; // fld(log2(M-1)/2 - 0.5)
     cudaDeviceSynchronize();
     if (num_moduli <= threshold<T>::x) {
-        scaling_launch<T, 1>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, incA8i, sftA, B8i, ldb8i, incB8i, sftB, C32i, ldc32i, log2M);
+        scaling_launch<T, 1>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, incA8i, sftA, B8i, ldb8i, incB8i, sftB, C32i, ldc32i, log2M, skip_scalA, skip_scalB);
     } else if (num_moduli <= threshold<T>::y) {
-        scaling_launch<T, 2>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, incA8i, sftA, B8i, ldb8i, incB8i, sftB, C32i, ldc32i, log2M);
+        scaling_launch<T, 2>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, incA8i, sftA, B8i, ldb8i, incB8i, sftB, C32i, ldc32i, log2M, skip_scalA, skip_scalB);
     } else if (num_moduli <= threshold<T>::z) {
-        scaling_launch<T, 3>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, incA8i, sftA, B8i, ldb8i, incB8i, sftB, C32i, ldc32i, log2M);
+        scaling_launch<T, 3>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, incA8i, sftA, B8i, ldb8i, incB8i, sftB, C32i, ldc32i, log2M, skip_scalA, skip_scalB);
     } else {
-        scaling_launch<T, 4>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, incA8i, sftA, B8i, ldb8i, incB8i, sftB, C32i, ldc32i, log2M);
+        scaling_launch<T, 4>(op_A, op_B, m, n, k, num_moduli, A, lda, B, ldb, A8i, lda8i, incA8i, sftA, B8i, ldb8i, incB8i, sftB, C32i, ldc32i, log2M, skip_scalA, skip_scalB);
     }
 }
 

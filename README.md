@@ -2,7 +2,7 @@
 
 GEMMul8 (GEMMulate): GEMM emulation using int8 matrix engines based on Ozaki Scheme II
 
-GEMMul8 (GEMMulate) is a library for emulating high-precision matrix multiplication (SGEMM/DGEMM) using low-precision INT8 matrix engines.
+GEMMul8 is a library for emulating high-precision matrix multiplication (SGEMM/DGEMM) using low-precision INT8 matrix engines.
 It is based on the Ozaki Scheme II, enabling bit-wise reproducible results with superior performance and power efficiency compared to native floating-point implementations.
 
 - [Technical Overview](#technical-overview)
@@ -21,10 +21,15 @@ It is based on the Ozaki Scheme II, enabling bit-wise reproducible results with 
   - [1. Direct Usage (Normal mode)](#1-direct-usage-normal-mode)
     - [Example: run emulation for the CUDA backend](#example-run-emulation-for-the-cuda-backend)
     - [Arguments of `gemmul8::gemm`](#arguments-of-gemmul8gemm)
+    - [Behavior of `skip_scalA` / `skip_scalB`](#behavior-of-skip_scala--skip_scalb)
+    - [Note on `skip_scalA` / `skip_scalB`](#note-on-skip_scala--skip_scalb)
+    - [Example: How to skip scaling step](#example-how-to-skip-scaling-step)
   - [2. Hijack cuBLAS/hipBLAS GEMM (Hook Mode)](#2-hijack-cublashipblas-gemm-hook-mode)
     - [Interception target](#interception-target)
     - [How to enable the hook](#how-to-enable-the-hook)
     - [Configure emulation parameters via environment variables](#configure-emulation-parameters-via-environment-variables)
+    - [💡Performance tips](#performance-tips)
+    - [How to change environment variables programmatically](#how-to-change-environment-variables-programmatically)
 - [Numerical results](#numerical-results)
   - [Environments](#environments)
   - [Accuracy](#accuracy)
@@ -171,7 +176,7 @@ const unsigned num_moduli = 14u;  // Accuracy knob: 2 <= num_moduli <= 20
 const bool fastmode = true;       // true (fast mode) or false (accurate mode)
 
 // 3. Allocate workspace
-const size_t worksize = gemmul8::workSize(m,n,k,num_moduli); // calculate required memory (Byte)
+const size_t worksize = gemmul8::workSize(m, n, k, num_moduli); // calculate required memory (Byte)
 void *work;
 cudaMalloc(&work, worksize);
 
@@ -190,17 +195,145 @@ time_breakdown = gemmul8::gemm(cublas_handle,
 
 // 6. Free workspace
 cudaFree(work);
+
+// 7. Destroy a handle
+cublasDestroy(cublas_andle);
 ```
 
 #### Arguments of `gemmul8::gemm`
 
-The arguments for `gemmul8::gemm` closely match the standard [cublas&lt;t&gt;gemm](https://docs.nvidia.com/cuda/cublas/#cublas-t-gemm) and [hipblasXgemm](https://rocm.docs.amd.com/projects/hipBLAS/en/develop/reference/hipblas-api-functions.html#hipblasxgemm-batched-stridedbatched) interfaces, with the addition of `num_moduli`, `fastmode`, and `work`.
+The arguments for `gemmul8::gemm` closely match the standard [cublas&lt;t&gt;gemm](https://docs.nvidia.com/cuda/cublas/#cublas-t-gemm) and [hipblasXgemm](https://rocm.docs.amd.com/projects/hipBLAS/en/develop/reference/hipblas-api-functions.html#hipblasxgemm-batched-stridedbatched) interfaces, with additional parameters that control internal preprocessing and workspace reuse.
 
-| Argument     | Type             | Description                                                                  |
-| :----------- | :--------------- | :--------------------------------------------------------------------------- |
-| `num_moduli` | `const unsigned` | Number of moduli (controls accuracy). `2 <= num_moduli <= 20`.               |
-| `fastmode`   | `const bool`     | Enables fast computation mode (`true` = fast mode, `false` = accurate mode). |
-| `work`       | `void* const`    | Pointer to preallocated workspace.                                           |
+GEMMul8 provides both a workspace query function (`workSize`) and an extended GEMM computation interface (`gemm`), as shown below:
+
+```cpp
+namespace gemmul8 {
+
+// workSize returns the required workspace size in bytes.
+size_t workSize(
+    const size_t m,                         // Number of rows of C
+    const size_t n,                         // Number of columns of C
+    const size_t k,                         // Inner dimension <= 2^17
+    const unsigned num_moduli,              // #moduli, 2 <= num_moduli <= 20
+    const bool enable_skip_scalA = false,   // [option] Reserve extra space for A to allow skip_scalA
+    const bool enable_skip_scalB = false,   // [option] Reserve extra space for B to allow skip_scalB
+    size_t *workSizeA            = nullptr, // [option] Output: workspace size used for A8i and sftA
+    size_t *workSizeB            = nullptr  // [option] Output: workspace size used for B8i and sftB
+);
+
+// gemm returns computation time in second of each computational phase
+template <typename T> std::vector<double> gemm(
+    cublasHandle_t handle,                  // Handle to the cuBLAS library context
+    const cublasOperation_t op_A,           // CUBLAS_OP_N or CUBLAS_OP_T
+    const cublasOperation_t op_B,           // CUBLAS_OP_N or CUBLAS_OP_T
+    const size_t m,                         // Number of rows of C
+    const size_t n,                         // Number of columns of C
+    const size_t k,                         // Inner dimension <= 2^17
+    const T *alpha,                         // Scaling factor for op(A)*op(B)
+    const T *const A,                       // 1-D device array of dimensions lda*k (CUBLAS_OP_N) or lda*m (CUBLAS_OP_T)
+    const size_t lda,                       // Leading dimension of A
+    const T *const B,                       // 1-D device array of dimensions ldb*n (CUBLAS_OP_N) or ldb*k (CUBLAS_OP_T)
+    const size_t ldb,                       // Leading dimension of B
+    const T *beta,                          // Scaling factor for C
+    T *const C,                             // 1-D device array of dimensions ldc*n
+    const size_t ldc,                       // Leading dimension of C
+    const unsigned num_moduli,              // #moduli, 2 <= num_moduli <= 20
+    const bool fastmode,                    // false (accurate mode) or true (fast mode)
+    void *const work,                       // Preallocated workspace
+    void *const workA            = nullptr, // [optional] Separate workspace for A (if nullptr, uses work)
+    void *const workB            = nullptr, // [optional] Separate workspace for B (if nullptr, uses work)
+    const bool enable_skip_scalA = false,   // [optional] Enables scaling-skip mechanism for A
+    const bool enable_skip_scalB = false,   // [optional] Enables scaling-skip mechanism for B
+    bool skip_scalA              = false,   // [optional] If true, skip preprocessing for A
+    bool skip_scalB              = false    // [optional] If true, skip preprocessing for B
+);
+
+} // namespace gemmul8
+```
+
+#### Behavior of `skip_scalA` / `skip_scalB`
+
+- `gemmul8::gemm` internally converts the input matrices `A` and `B` into INT8 format and performs modular multiplications across multiple moduli.
+- The conversion (scaling) step can be **skipped** in consecutive GEMM calls if the same matrices are reused, allowing for substantial performance gains.
+- If `enable_skip_scal{A|B} = true`, additional workspace is preallocated so that the scaled INT8 representation of `A`/`B` can be retained between calls.
+- If both `enable_skip_scal{A|B} && skip_scal{A|B} = true`, the scaling step for `A`/`B` is **actually skipped**, and previously prepared data are reused for faster execution.
+  This mode assumes that the contents of `A`/`B` in device memory remain unchanged.
+- This mechanism is particularly effective when repeatedly multiplying the same `A` (or `B`) with different `B` (or `A`) matrices.
+
+#### Note on `skip_scalA` / `skip_scalB`
+
+When using `skip_scalA` / `skip_scalB`, the preprocessing step that converts `A`/`B` into its internal INT8 representation is skipped.
+For correctness, the following conditions **must all hold** between consecutive GEMM calls:
+
+1. The dimensions (`M`/`K` for `A`, `K`/`N` for `B`) must be identical to those in the previous call.
+2. The operation type (`CUBLAS_OP_N` / `CUBLAS_OP_T`) for `A`/`B` must be the same as before.
+3. The value of `num_moduli` must remain unchanged.
+4. The `fastmode` setting must be identical to that of the previous call.
+5. The contents of `A`/`B` in device memory must not be modified between calls.
+
+If any of these conditions differ, the cached scaled data become invalid, and skipping must **not** be used.
+In such cases, set `skip_scalA=false` / `skip_scalB=false`.
+
+This skip mechanism is designed for repeated GEMM calls with identical A or B.
+Use it only when you are certain that the input matrices and configuration have not changed.
+When in doubt, disable skipping to ensure correctness.
+
+#### Example: How to skip scaling step
+
+```cpp
+#include "gemmul8.hpp"
+
+// 1. Create a handle to the cuBLAS library context
+cublasHandle_t cublas_handle;
+cublasCreate(&cublas_handle);
+
+// 2. Settings
+const unsigned num_moduli = 14u;
+const bool fastmode = false;
+
+// 3. Matrix shapes
+const size_t m1 = 64, n1 = 10, k1 = 10; // 1st GEMM: 64×10 × 10×10
+const size_t m2 = 20, n2 = 10, k2 = 10; // 2nd GEMM: 20×10 × 10×10
+
+// 4. Allocate workspace
+size_t worksizeA, worksizeB;
+const size_t worksize = gemmul8::workSize(
+    std::max(m1, m2), std::max(n1, n2), std::max(k1, k2),
+    num_moduli, false, true, &worksizeA, &worksizeB);
+
+void *work;
+cudaMalloc(&work, worksize);
+
+int8_t *workA = reinterpret_cast<int8_t *>(work); // fixed workspace for A
+int8_t *workB = workA + offsetA;                  // fixed workspace for B
+int8_t *work_rem = workB + offsetB;               // remaining workspace
+
+// 5. Run GEMM (first call: scaling performed)
+gemmul8::gemm(cublas_handle,
+              CUBLAS_OP_N, CUBLAS_OP_N,
+              m1, n1, k1,
+              &alpha, devA1, lda,
+              devB, ldb,
+              &beta, devC, ldc,
+              num_moduli, fastmode, (void*)work_rem, (void*)workA, (void*)workB,
+              false, true, false, false);
+
+// 6. Reuse scaled A (second call: skip_scalB = true)
+gemmul8::gemm(cublas_handle,
+              CUBLAS_OP_N, CUBLAS_OP_N,
+              m1, n1, k1,
+              &alpha, devA1, lda,
+              devB, ldb,
+              &beta, devC, ldc,
+              num_moduli, fastmode, (void*)work_rem, (void*)workA, (void*)workB,
+              false, true, false, true);
+
+// 7. Free workspace
+cudaFree(work);
+
+// 8. Destroy a handle
+cublasDestroy(cublas_andle);
+```
 
 ### 2. Hijack cuBLAS/hipBLAS GEMM (Hook Mode)
 
@@ -208,8 +341,8 @@ Intercept standard GEMM calls automatically without modifying the application so
 
 #### Interception target
 
-- `cublasSgemm_v2`, `cublasDgemm_v2`, `cublasGemmEx`
-- `hipblasSgemm`, `hipblasDgemm`, `hipblasGemmEx_v2`
+- `cublasSgemm`, `cublasDgemm`, `cublasSgemm_v2`, `cublasDgemm_v2`, `cublasGemmEx`
+- `hipblasSgemm`, `hipblasDgemm`, `hipblasGemmEx`, `hipblasGemmEx_v2`
 
 #### How to enable the hook
 
@@ -225,18 +358,62 @@ export LD_PRELOAD=/path-to-GEMMul8/lib/libgemmul8.so
 #### Configure emulation parameters via environment variables
 
 ```bash
-export NUM_MODULI_D=15
-export FASTMODE_D=1
-export NUM_MODULI_S=7
-export FASTMODE_S=0
+export GEMMUL8_NUM_MOD_D=15
+export GEMMUL8_NUM_MOD_S=7
+export GEMMUL8_FASTMODE_D=1
+export GEMMUL8_FASTMODE_S=0
+export GEMMUL8_MAX_M=4096
+export GEMMUL8_MAX_N=4096
+export GEMMUL8_MAX_K=4096
+export GEMMUL8_MAX_NUM_MOD=18
+export GEMMUL8_SKIP_SCALE_A=1
+export GEMMUL8_SKIP_SCALE_B=1
 ```
 
-| Variable       | Default | Applies to | Description                                                                          |
-| :------------- | :------ | :--------- | :----------------------------------------------------------------------------------- |
-| `NUM_MODULI_D` | `18`    | DGEMM      | Number of moduli (`unsigned num_moduli`) used in DGEMM emulation. Controls accuracy. |
-| `NUM_MODULI_S` | `8`     | SGEMM      | Number of moduli used in SGEMM emulation. Controls accuracy.                         |
-| `FASTMODE_D`   | `0`     | DGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
-| `FASTMODE_S`   | `0`     | SGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| Variable               | Default | Applies to | Description                                                                          |
+| :--------------------- | :------ | :--------- | :----------------------------------------------------------------------------------- |
+| `GEMMUL8_NUM_MOD_D`    | `2`     | DGEMM      | Number of moduli (`unsigned num_moduli`) used in DGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_S`    | `2`     | SGEMM      | Number of moduli (`unsigned num_moduli`) used in SGEMM emulation. Controls accuracy. |
+| `GEMMUL8_FASTMODE_D`   | `0`     | DGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_FASTMODE_S`   | `0`     | SGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_MAX_M`        | `0`     | both       | Maximum value of `M` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_N`        | `0`     | both       | Maximum value of `N` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_K`        | `0`     | both       | Maximum value of `K` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_NUM_MOD`  | `2`     | both       | Maximum number of moduli used when computing the size of the preallocated workspace. |
+| `GEMMUL8_SKIP_SCALE_A` | `0`     | both       | Enables skipping redundant preprocessing for `A` (`1` = enable, `0` = disable).      |
+| `GEMMUL8_SKIP_SCALE_B` | `0`     | both       | Enables skipping redundant preprocessing for `B` (`1` = enable, `0` = disable).      |
+
+- This hook mode preallocates a single large GPU workspace on demand and resizes as needed.
+- Each `cublasHandle_t` maintains an independent workspace.
+- The workspace is automatically released when the corresponding handle is destroyed via `cublasDestroy()` or `cublasDestroy_v2()`.
+- Workspace size is determined as `max(wsmax, ws, pre_ws)`, where
+  - `wsmax  = workSize(GEMMUL8_MAX_M, GEMMUL8_MAX_N, GEMMUL8_MAX_K, GEMMUL8_MAX_NUM_MOD)`
+  - `ws     = workSize(m, n, k, GEMMUL8_NUM_MOD_{D|S})`
+  - `pre_ws =` the size of the previously allocated workspace for the same `cublasHandle_t`
+- The workspace is **never shrunk** automatically; it only grows when a larger allocation is required.
+- When `GEMMUL8_SKIP_SCALE_{A|B}=1`, redundant preprocessing for `A`/`B` is skipped (see below performance tips).
+
+#### 💡Performance tips
+
+- If `GEMMUL8_MAX_{M|N|K|NUM_MOD}` variables are set appropriately, the workspace size becomes fixed to `wsmax`, avoiding costly reallocations during subsequent GEMM calls.
+- The hook automatically caches the last GEMM configuration (matrix pointers, shapes, and moduli) per `cublasHandle_t`.
+- `GEMMUL8_SKIP_SCALE_{A|B}=1` allows consecutive GEMM calls using the same matrix pointers (`A`/`B`) to reuse already-scaled intermediate data.
+- Automatic skip of conversion from `A` or `B` to INT8 is enabled when:
+
+  1. `GEMMUL8_SKIP_SCALE_{A|B}=1`.
+  2. The same computation mode (fast mode or accurate mode) is used for both the previous and current calls.
+  3. The same `cublasHandle_t` is used for both the previous and current calls.
+  4. The same device pointer (`A` or `B`) is used for both the previous and current calls.
+  5. The same matrix shapes (`M`/`K`/`lda` for `A`, `K`/`N`/`ldb` for `B`) are used for both the previous and current calls.
+  6. The same operation flag (`transa` for `A`, `transb` for `B`) is used for both the previous and current calls.
+  7. The same number of moduli (`GEMMUL8_NUM_MOD_{D|S}`) is used for both the previous and current calls.
+  8. The same workspace size (`ws`) is used for both the previous and current calls.
+
+- To ensure condition 8 is met when using the scaling skip feature, it is recommended to set the `GEMMUL8_MAX_{M|N|K|NUM_MOD}` variables. This fixes the workspace size to wsmax, preventing it from changing between calls.
+- ⚠️Note: Skip scaling assumes that the matrices `A` or `B` remain unchanged in GPU memory.  
+  If their contents are modified between GEMM calls, set `GEMMUL8_SKIP_SCALE_{A|B}=0` to ensure correctness.
+
+#### How to change environment variables programmatically
 
 You can also set these environment variables programmatically from within your code using setenv.
 
@@ -245,14 +422,14 @@ char num_moduli[12];
 
 // Run emulation with num_moduli = 15 & fastmode = true
 snprintf(num_moduli, sizeof(num_moduli), "%u", 15u);
-setenv("NUM_MODULI_D", num_moduli, 1);
-setenv("FASTMODE_D", "1", 1);
+setenv("GEMMUL8_NUM_MOD_D", num_moduli, 1);
+setenv("GEMMUL8_FASTMODE_D", "1", 1);
 cublasDgemm_v2(...);
 
 // Run emulation with num_moduli = 18 & fastmode = false
 snprintf(num_moduli, sizeof(num_moduli), "%u", 18u);
-setenv("NUM_MODULI_D", num_moduli, 1);
-setenv("FASTMODE_D", "0", 1);
+setenv("GEMMUL8_NUM_MOD_D", num_moduli, 1);
+setenv("GEMMUL8_FASTMODE_D", "0", 1);
 cublasDgemm_v2(...);
 ```
 
@@ -260,6 +437,8 @@ cublasDgemm_v2(...);
 
 The constant $\phi$ controls the difficulty of matrix multiplication (exponent distribution of input matrices).
 The difficulty of $\phi = 0.5$ is comparable to that of matrix multiplication in HPL.
+
+See all numerical results in the separate repository: [GEMMul8_numerical_results](https://github.com/UCHINO-Yuki/GEMMul8_numerical_results)
 
 ### Environments
 
@@ -303,7 +482,7 @@ _Power efficiency of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080
 
 ## Acknowledgment
 
-**Please do not contact the individuals listed below regarding this code.**
+⚠️**Please do not contact the individuals listed below regarding this code.**
 
 ### Assistance with debugging
 

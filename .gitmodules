@@ -1,3 +1,0 @@
-[submodule "GEMMul8/testing/GEMMul8_numerical_results"]
-	path = GEMMul8/testing/GEMMul8_numerical_results
-	url = https://github.com/UCHINO-Yuki/GEMMul8_numerical_results.git

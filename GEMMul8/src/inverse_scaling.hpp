@@ -5,16 +5,17 @@ namespace oz2 {
 
 // C := C64f - round(C64f/M)*M
 template <typename TC, typename TM>
-__forceinline__ __device__ TC invscal_device(const size_t mem_idx,                  //
-                                             const unsigned num_moduli,             //
-                                             const size_t sizeC,                    //
-                                             const size_t incC8u,                   //
-                                             const uint8_t *const __restrict__ C8u, // input
-                                             const size_t ldc8u,                    // leading dim of C8u
-                                             const double invM,                     //
-                                             const TM M,                            //
-                                             const int sft)                         // exponent of shift values
-{
+__forceinline__ __device__ TC invscal_device(
+    const size_t mem_idx,                  //
+    const unsigned num_moduli,             //
+    const size_t sizeC,                    //
+    const size_t incC8u,                   //
+    const uint8_t *const __restrict__ C8u, // input
+    const size_t ldc8u,                    // leading dim of C8u
+    const double invM,                     //
+    const TM M,                            //
+    const int sft                          // exponent of shift values
+) {
     if constexpr (std::is_same_v<TM, double>) {
 
         double C64f = 0.0;
@@ -51,19 +52,20 @@ __forceinline__ __device__ TC invscal_device(const size_t mem_idx,              
 
 // C := diag(2^sftA) * C * diag(2^sftB)
 template <typename TC, typename TM, int ALPHA, int BETA>
-__global__ void invscal_kernel_special(const unsigned num_moduli,              //
-                                       const size_t m,                         // size(C64f,1)
-                                       const size_t sizeC,                     //
-                                       const size_t incC8u,                    //
-                                       const uint8_t *const __restrict__ C8u,  // input
-                                       const size_t ldc8u,                     // leading dim of C8u
-                                       TC *const __restrict__ C,               // output
-                                       const size_t ldc,                       // leading dimension
-                                       const double invM,                      //
-                                       const TM M,                             //
-                                       const int16_t *const __restrict__ sftA, // exponent of shift values for rows of A
-                                       const int16_t *const __restrict__ sftB) // exponent of shift values for cols of B
-{
+__global__ void invscal_kernel_special(
+    const unsigned num_moduli,              //
+    const size_t m,                         // size(C64f,1)
+    const size_t sizeC,                     //
+    const size_t incC8u,                    //
+    const uint8_t *const __restrict__ C8u,  // input
+    const size_t ldc8u,                     // leading dim of C8u
+    TC *const __restrict__ C,               // output
+    const size_t ldc,                       // leading dimension
+    const double invM,                      //
+    const TM M,                             //
+    const int16_t *const __restrict__ sftA, // exponent of shift values for rows of A
+    const int16_t *const __restrict__ sftB  // exponent of shift values for cols of B
+) {
     const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= sizeC) return;
     const auto col     = idx / m;
@@ -84,21 +86,22 @@ __global__ void invscal_kernel_special(const unsigned num_moduli,              /
 }
 
 template <typename TC, typename TM>
-__global__ void invscal_kernel(const TC alpha,                         //
-                               const TC beta,                          //
-                               const unsigned num_moduli,              //
-                               const size_t m,                         // size(C64f,1)
-                               const size_t sizeC,                     //
-                               const size_t incC8u,                    //
-                               const uint8_t *const __restrict__ C8u,  // input
-                               const size_t ldc8u,                     // leading dim of C8u
-                               TC *const __restrict__ C,               // output
-                               const size_t ldc,                       // leading dimension
-                               const double invM,                      //
-                               const TM M,                             //
-                               const int16_t *const __restrict__ sftA, // exponent of shift values for rows of A
-                               const int16_t *const __restrict__ sftB) // exponent of shift values for cols of B
-{
+__global__ void invscal_kernel(
+    const TC alpha,                         //
+    const TC beta,                          //
+    const unsigned num_moduli,              //
+    const size_t m,                         // size(C64f,1)
+    const size_t sizeC,                     //
+    const size_t incC8u,                    //
+    const uint8_t *const __restrict__ C8u,  // input
+    const size_t ldc8u,                     // leading dim of C8u
+    TC *const __restrict__ C,               // output
+    const size_t ldc,                       // leading dimension
+    const double invM,                      //
+    const TM M,                             //
+    const int16_t *const __restrict__ sftA, // exponent of shift values for rows of A
+    const int16_t *const __restrict__ sftB  // exponent of shift values for cols of B
+) {
     const auto idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= sizeC) return;
     const auto col     = idx / m;
@@ -112,20 +115,21 @@ __global__ void invscal_kernel(const TC alpha,                         //
 
 // interface!!
 template <typename T>
-__inline__ void inverse_scaling(const bool is_numM_1,
-                                const unsigned num_moduli,
-                                const size_t m,            // size(C,1)
-                                const size_t n,            // size(C,2)
-                                const uint8_t *const C8u,  // input
-                                const size_t ldc8u,        // leading dim of C8u
-                                const size_t incC8u,       //
-                                T *const C,                // output
-                                const size_t ldc,          // leading dimension
-                                const int16_t *const sftA, // exponent of shift values for rows of A
-                                const int16_t *const sftB, // exponent of shift values for cols of B
-                                const T alpha,             //
-                                const T beta)              //
-{
+__inline__ void inverse_scaling(
+    const bool is_numM_1,
+    const unsigned num_moduli,
+    const size_t m,            // size(C,1)
+    const size_t n,            // size(C,2)
+    const uint8_t *const C8u,  // input
+    const size_t ldc8u,        // leading dim of C8u
+    const size_t incC8u,       //
+    T *const C,                // output
+    const size_t ldc,          // leading dimension
+    const int16_t *const sftA, // exponent of shift values for rows of A
+    const int16_t *const sftB, // exponent of shift values for cols of B
+    const T alpha,             //
+    const T beta               //
+) {
     const unsigned table_idx = num_moduli - 2;
     const size_t sizeC       = m * n;
     const double invM        = oz2_table::invM[table_idx];
