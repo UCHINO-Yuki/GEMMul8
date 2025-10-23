@@ -8,11 +8,9 @@ It is based on the Ozaki Scheme II, enabling bit-wise reproducible results with 
 - [Technical Overview](#technical-overview)
 - [Build](#build)
   - [make options](#make-options)
-  - [Note](#note)
   - [Example](#example)
     - [CUDA build](#cuda-build)
     - [HIP build](#hip-build)
-  - [External Dependencies and Licenses](#external-dependencies-and-licenses)
 - [Running Sample Codes](#running-sample-codes)
   - [How to Run](#how-to-run)
   - [make options](#make-options-1)
@@ -22,13 +20,11 @@ It is based on the Ozaki Scheme II, enabling bit-wise reproducible results with 
     - [Example: run emulation for the CUDA backend](#example-run-emulation-for-the-cuda-backend)
     - [Arguments of `gemmul8::gemm`](#arguments-of-gemmul8gemm)
     - [Behavior of `skip_scalA` / `skip_scalB`](#behavior-of-skip_scala--skip_scalb)
-    - [Note on `skip_scalA` / `skip_scalB`](#note-on-skip_scala--skip_scalb)
     - [Example: How to skip scaling step](#example-how-to-skip-scaling-step)
   - [2. Hijack cuBLAS/hipBLAS GEMM (Hook Mode)](#2-hijack-cublashipblas-gemm-hook-mode)
     - [Interception target](#interception-target)
     - [How to enable the hook](#how-to-enable-the-hook)
     - [Configure emulation parameters via environment variables](#configure-emulation-parameters-via-environment-variables)
-    - [💡Performance tips](#performance-tips)
     - [How to change environment variables programmatically](#how-to-change-environment-variables-programmatically)
 - [Numerical results](#numerical-results)
   - [Environments](#environments)
@@ -81,15 +77,16 @@ To rebuild from scratch, run `make clean && make -j8`.
 | `cuMpSGEMM_DIR` | `../../cuMpSGEMM` | Path to cuMpSGEMM. Used if `cuMpSGEMM=yes`.                                                           |
 | `HIJACK`        | `no`              | Set to `yes` to hijack cuBLAS GEMM calls with emulation in the sample code.                           |
 
-### Note
-
-- If you enable optional modules (ozIMMU_EF=yes, cuMpSGEMM=yes), please clone and build their repositories first.
-  - [cuMpSGEMM - CUDA Mutable-precision SGEMM](https://github.com/enp1s0/cuMpSGEMM)
-  - [ozIMMU - DGEMM on Int8 Tensor Core](https://github.com/enp1s0/ozIMMU)
-  - See also [Accelerator for ozIMMU](https://github.com/RIKEN-RCCS/accelerator_for_ozIMMU)
-- `BACKEND=auto` will attempt to detect your GPU vendor automatically.
-- `GPU_ARCH=auto` will automatically detect and use the appropriate compute capability or architecture for your GPU.
-- Target GPU architecture can be found from e.g., [NVIDIA GPU CC](https://developer.nvidia.com/cuda-gpus) or [AMD hardware specs](https://rocm.docs.amd.com/en/latest/reference/gpu-arch-specs.html).
+> [!NOTE]
+>
+> - If you enable optional modules (ozIMMU_EF=yes, cuMpSGEMM=yes), please clone and build their repositories first.
+>   - [cuMpSGEMM - CUDA Mutable-precision SGEMM](https://github.com/enp1s0/cuMpSGEMM)
+>   - [ozIMMU - DGEMM on Int8 Tensor Core](https://github.com/enp1s0/ozIMMU)
+>   - See also [Accelerator for ozIMMU](https://github.com/RIKEN-RCCS/accelerator_for_ozIMMU)
+>   - If you use these, please ensure compliance with their respective license terms.
+> - `BACKEND=auto` will attempt to detect your GPU vendor automatically.
+> - `GPU_ARCH=auto` will automatically detect and use the appropriate compute capability or architecture for your GPU.
+> - Target GPU architecture can be found from e.g., [NVIDIA GPU CC](https://developer.nvidia.com/cuda-gpus) or [AMD hardware specs](https://rocm.docs.amd.com/en/latest/reference/gpu-arch-specs.html).
 
 ### Example
 
@@ -108,12 +105,6 @@ Build for an AMD MI300X GPU (gfx942 architecture)
 ```bash
 make -j8 BACKEND=hip HIP_PATH=/opt/rocm GPU_ARCH=gfx942
 ```
-
-### External Dependencies and Licenses
-
-- ozIMMU_EF is derived from [ozIMMU](https://github.com/enp1s0/ozIMMU) by Ootomo and [Accelerator for ozIMMU](https://github.com/RIKEN-RCCS/accelerator_for_ozIMMU) by RIKEN R-CCS.
-- cuMpSGEMM is derived from [cuMpSGEMM](https://github.com/enp1s0/cuMpSGEMM) by Ootomo.
-- If you use these libraries, please ensure compliance with their respective license terms.
 
 ## Running Sample Codes
 
@@ -260,23 +251,24 @@ template <typename T> std::vector<double> gemm(
   This mode assumes that the contents of `A`/`B` in device memory remain unchanged.
 - This mechanism is particularly effective when repeatedly multiplying the same `A` (or `B`) with different `B` (or `A`) matrices.
 
-#### Note on `skip_scalA` / `skip_scalB`
+> [!NOTE]
+> When using `skip_scalA` / `skip_scalB`, the preprocessing step that converts `A`/`B` into its internal INT8 representation is skipped.
+> For correctness, the following conditions **must all hold** between consecutive GEMM calls:
+>
+> 1. The dimensions (`M`/`K` for `A`, `K`/`N` for `B`) must be identical to those in the previous call.
+> 2. The operation type (`CUBLAS_OP_N` / `CUBLAS_OP_T`) for `A`/`B` must be the same as before.
+> 3. The value of `num_moduli` must remain unchanged.
+> 4. The `fastmode` setting must be identical to that of the previous call.
+> 5. The contents of `A`/`B` in device memory must not be modified between calls.
 
-When using `skip_scalA` / `skip_scalB`, the preprocessing step that converts `A`/`B` into its internal INT8 representation is skipped.
-For correctness, the following conditions **must all hold** between consecutive GEMM calls:
+> [!CAUTION]
+> If any of these conditions differ, the cached scaled data become invalid, and skipping must **not** be used.
+> In such cases, set `skip_scalA=false` / `skip_scalB=false`.
 
-1. The dimensions (`M`/`K` for `A`, `K`/`N` for `B`) must be identical to those in the previous call.
-2. The operation type (`CUBLAS_OP_N` / `CUBLAS_OP_T`) for `A`/`B` must be the same as before.
-3. The value of `num_moduli` must remain unchanged.
-4. The `fastmode` setting must be identical to that of the previous call.
-5. The contents of `A`/`B` in device memory must not be modified between calls.
-
-If any of these conditions differ, the cached scaled data become invalid, and skipping must **not** be used.
-In such cases, set `skip_scalA=false` / `skip_scalB=false`.
-
-This skip mechanism is designed for repeated GEMM calls with identical A or B.
-Use it only when you are certain that the input matrices and configuration have not changed.
-When in doubt, disable skipping to ensure correctness.
+> [!CAUTION]
+> This skip mechanism is designed for repeated GEMM calls with identical A or B.
+> Use it only when you are certain that the input matrices and configuration have not changed.
+> When in doubt, disable skipping to ensure correctness.
 
 #### Example: How to skip scaling step
 
@@ -390,28 +382,30 @@ export GEMMUL8_SKIP_SCALE_B=1
   - `wsmax  = workSize(GEMMUL8_MAX_M, GEMMUL8_MAX_N, GEMMUL8_MAX_K, GEMMUL8_MAX_NUM_MOD)`
   - `ws     = workSize(m, n, k, GEMMUL8_NUM_MOD_{D|S})`
   - `pre_ws =` the size of the previously allocated workspace for the same `cublasHandle_t`
-- The workspace is **never shrunk** automatically; it only grows when a larger allocation is required.
-- When `GEMMUL8_SKIP_SCALE_{A|B}=1`, redundant preprocessing for `A`/`B` is skipped (see below performance tips).
-
-#### 💡Performance tips
-
 - If `GEMMUL8_MAX_{M|N|K|NUM_MOD}` variables are set appropriately, the workspace size becomes fixed to `wsmax`, avoiding costly reallocations during subsequent GEMM calls.
-- The hook automatically caches the last GEMM configuration (matrix pointers, shapes, and moduli) per `cublasHandle_t`.
-- `GEMMUL8_SKIP_SCALE_{A|B}=1` allows consecutive GEMM calls using the same matrix pointers (`A`/`B`) to reuse already-scaled intermediate data.
-- Automatic skip of conversion from `A` or `B` to INT8 is enabled when:
+- The workspace is **never shrunk** automatically; it only grows when a larger allocation is required.
+- When `GEMMUL8_SKIP_SCALE_{A|B}=1`, redundant preprocessing for `A`/`B` is skipped (see below).
 
-  1. `GEMMUL8_SKIP_SCALE_{A|B}=1`.
-  2. The same computation mode (fast mode or accurate mode) is used for both the previous and current calls.
-  3. The same `cublasHandle_t` is used for both the previous and current calls.
-  4. The same device pointer (`A` or `B`) is used for both the previous and current calls.
-  5. The same matrix shapes (`M`/`K`/`lda` for `A`, `K`/`N`/`ldb` for `B`) are used for both the previous and current calls.
-  6. The same operation flag (`transa` for `A`, `transb` for `B`) is used for both the previous and current calls.
-  7. The same number of moduli (`GEMMUL8_NUM_MOD_{D|S}`) is used for both the previous and current calls.
-  8. The same workspace size (`ws`) is used for both the previous and current calls.
+> [!IMPORTANT]
+>
+> - `GEMMUL8_SKIP_SCALE_{A|B}=1` allows consecutive GEMM calls using the same matrix pointers (`A`/`B`) to reuse already-scaled intermediate data.
+> - Automatic skip of conversion from `A` or `B` to INT8 is enabled when:
+>   1. `GEMMUL8_SKIP_SCALE_{A|B}=1`.
+>   2. The same computation mode (fast mode or accurate mode) is used for both the previous and current calls.
+>   3. The same `cublasHandle_t` is used for both the previous and current calls.
+>   4. The same device pointer (`A` or `B`) is used for both the previous and current calls.
+>   5. The same matrix shapes (`M`/`K`/`lda` for `A`, `K`/`N`/`ldb` for `B`) are used for both the previous and current calls.
+>   6. The same operation flag (`transa` for `A`, `transb` for `B`) is used for both the previous and current calls.
+>   7. The same number of moduli (`GEMMUL8_NUM_MOD_{D|S}`) is used for both the previous and current calls.
+>   8. The same workspace size (`ws`) is used for both the previous and current calls.
 
-- To ensure condition 8 is met when using the scaling skip feature, it is recommended to set the `GEMMUL8_MAX_{M|N|K|NUM_MOD}` variables. This fixes the workspace size to wsmax, preventing it from changing between calls.
-- ⚠️Note: Skip scaling assumes that the matrices `A` or `B` remain unchanged in GPU memory.  
-  If their contents are modified between GEMM calls, set `GEMMUL8_SKIP_SCALE_{A|B}=0` to ensure correctness.
+> [!TIP]
+> To ensure the last condition is met, it is recommended to set the `GEMMUL8_MAX_{M|N|K|NUM_MOD}` variables.
+> This fixes the workspace size to wsmax, preventing it from changing between calls.
+
+> [!CAUTION]
+> ⚠️Note: Skip scaling assumes that the matrices `A` or `B` remain unchanged in GPU memory.  
+> If their contents are modified between GEMM calls, set `GEMMUL8_SKIP_SCALE_{A|B}=0` to ensure correctness.
 
 #### How to change environment variables programmatically
 
@@ -482,7 +476,8 @@ _Power efficiency of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080
 
 ## Acknowledgment
 
-⚠️**Please do not contact the individuals listed below regarding this code.**
+> [!CAUTION]
+> Please do not contact the individuals listed below regarding this code.
 
 ### Assistance with debugging
 
