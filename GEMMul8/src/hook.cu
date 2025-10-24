@@ -1,4 +1,5 @@
 #include "../include/gemmul8.hpp" // gemmul8::gemm, gemmul8::workSize
+#include "self_hipify.hpp"
 #include <algorithm>
 #include <cstdlib>
 #include <dlfcn.h>

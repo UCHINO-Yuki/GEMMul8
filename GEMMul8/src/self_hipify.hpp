@@ -10,15 +10,17 @@
     #endif
     #define CUBLAS_VER_MAJOR 0
 
-    #define cublasCreate                hipblasCreate
-    #define cublasDestroy               hipblasDestroy
-    #define cublasHandle_t              hipblasHandle_t
-    #define cublasOperation_t           hipblasOperation_t
-    #define cublasStatus_t              hipblasStatus_t
-    #define cublasComputeType_t         hipblasComputeType_t
-    #define cublasGemmAlgo_t            hipblasGemmAlgo_t
-    #define CUBLAS_STATUS_SUCCESS       HIPBLAS_STATUS_SUCCESS
-    #define CUBLAS_STATUS_NOT_SUPPORTED HIPBLAS_STATUS_NOT_SUPPORTED
+    #define cublasCreate                  hipblasCreate
+    #define cublasDestroy                 hipblasDestroy
+    #define cublasHandle_t                hipblasHandle_t
+    #define cublasOperation_t             hipblasOperation_t
+    #define cublasStatus_t                hipblasStatus_t
+    #define cublasComputeType_t           hipblasComputeType_t
+    #define cublasGemmAlgo_t              hipblasGemmAlgo_t
+    #define CUBLAS_STATUS_SUCCESS         HIPBLAS_STATUS_SUCCESS
+    #define CUBLAS_STATUS_NOT_SUPPORTED   HIPBLAS_STATUS_NOT_SUPPORTED
+    #define CUBLAS_STATUS_ALLOC_FAILED    HIPBLAS_STATUS_ALLOC_FAILED
+    #define CUBLAS_STATUS_NOT_INITIALIZED HIPBLAS_STATUS_NOT_INITIALIZED
     #if defined(HIPBLAS_V2)
         #define cublasGemmEx hipblasGemmEx
     #else
