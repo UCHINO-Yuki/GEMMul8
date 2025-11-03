@@ -137,13 +137,19 @@ endif
 #===============
 TARGET_d := test_double
 TARGET_f := test_float
+TARGET_z := test_double_complex
+TARGET_c := test_float_complex
 
-all: INFO $(TARGET_d) $(TARGET_f) VERSION
+all: INFO $(TARGET_d) $(TARGET_f) $(TARGET_z) $(TARGET_c) VERSION
 
 INFO:
 	$(info BACKEND      : $(BACKEND))
+ifeq ($(BACKEND),cuda)
 	$(info CUDA_PATH    : $(CUDA_PATH))
+endif
+ifeq ($(BACKEND),hip)
 	$(info HIP_PATH     : $(HIP_PATH))
+endif
 	$(info GPU_ARCH     : $(GPU_ARCH))
 	$(info COMPILER     : $(COMPILER))
 	$(info GPU_MEM [MB] : $(GPU_MEM_MB))
@@ -159,14 +165,26 @@ $(TARGET_d): $(TARGET_d).cu
 $(TARGET_f): $(TARGET_f).cu
 	$(COMPILER) $< $(FLAGS) $(ARCH) -o $@ $(LIBS)
 
+$(TARGET_z): $(TARGET_z).cu
+	$(COMPILER) $< $(FLAGS) $(ARCH) -o $@ $(LIBS)
+
+$(TARGET_c): $(TARGET_c).cu
+	$(COMPILER) $< $(FLAGS) $(ARCH) -o $@ $(LIBS)
+
 VERSION:
 	$(COMPILER) --version 2>&1 | tee $(COMPILER)_version
 
-test_f:
+test_s:
 	LD_PRELOAD=$(LD) ./$(TARGET_f) $(MODE)
 
 test_d:
 	LD_PRELOAD=$(LD) ./$(TARGET_d) $(MODE)
+
+test_z:
+	LD_PRELOAD=$(LD) ./$(TARGET_z) $(MODE)
+
+test_c:
+	LD_PRELOAD=$(LD) ./$(TARGET_c) $(MODE)
 
 clean:
 	rm -f *.o

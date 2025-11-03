@@ -136,7 +136,7 @@ $(SHARED_OBJ): $(CU_FILES) $(HEADERS)
 	
 hook: $(SHARED_OBJ)
 	mkdir -p lib
-	$(COMPILER) $(FLAGS_SHARED) -c $(HOOK_SRC) -o $(HOOK_OBJ)
+	$(COMPILER) $(FLAGS_SHARED) -c $(HOOK_SRC) -o $(HOOK_OBJ) -diag-suppress 177
 	$(COMPILER) -shared $(FLAGS_SHARED) -o $(HOOK_TARGET) $(SHARED_OBJ) $(HOOK_OBJ) $(LIBS)
 
 clean:

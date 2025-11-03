@@ -1,4 +1,4 @@
-#include "../include/gemmul8.hpp" // gemmul8::gemm, gemmul8::workSize
+#include "../include/gemmul8.hpp"
 #include "self_hipify.hpp"
 #include <algorithm>
 #include <cstdlib>
@@ -9,18 +9,48 @@
 
 // NOTE: skip_scalA/B rely on pointer identity; actual A/B contents are not verified.
 //       Use GEMMUL8_SKIP_SCALE_* only when A/B data are unchanged.
+/*
+| Variable               | Default | Applies to | Description                                                                          |
+| :--------------------- | :------ | :--------- | :----------------------------------------------------------------------------------- |
+| `GEMMUL8_NUM_MOD_D`    | `0`     | DGEMM      | Number of moduli (`unsigned num_moduli`) used in DGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_S`    | `0`     | SGEMM      | Number of moduli (`unsigned num_moduli`) used in SGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_Z`    | `0`     | ZGEMM      | Number of moduli (`unsigned num_moduli`) used in ZGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_C`    | `0`     | CGEMM      | Number of moduli (`unsigned num_moduli`) used in CGEMM emulation. Controls accuracy. |
+| `GEMMUL8_FASTMODE_D`   | `0`     | DGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_FASTMODE_S`   | `0`     | SGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_FASTMODE_Z`   | `0`     | ZGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_FASTMODE_C`   | `0`     | CGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_MAX_M`        | `0`     | all        | Maximum value of `M` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_N`        | `0`     | all        | Maximum value of `N` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_K`        | `0`     | all        | Maximum value of `K` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_NUM_MOD`  | `0`     | all        | Maximum number of moduli used when computing the size of the preallocated workspace. |
+| `GEMMUL8_SKIP_SCALE_A` | `0`     | all        | Enables skipping redundant preprocessing for `A` (`1` = enable, `0` = disable).      |
+| `GEMMUL8_SKIP_SCALE_B` | `0`     | all        | Enables skipping redundant preprocessing for `B` (`1` = enable, `0` = disable).      |
+*/
 
 namespace {
 
+// ---- Default initialization values ----
 namespace initval {
-inline constexpr size_t MAX_M         = 1u;
-inline constexpr size_t MAX_N         = 1u;
-inline constexpr size_t MAX_K         = 1u;
-inline constexpr unsigned MAX_NUM_MOD = 2u;
-inline constexpr unsigned NUM_MOD_D   = 2u;
-inline constexpr unsigned NUM_MOD_S   = 2u;
+
+inline constexpr size_t MAX_M         = 0u;    // default M size
+inline constexpr size_t MAX_N         = 0u;    // default N size
+inline constexpr size_t MAX_K         = 0u;    // default K size
+inline constexpr unsigned MAX_NUM_MOD = 0u;    // default modulus count
+inline constexpr unsigned NUM_MOD_D   = 0u;    // default double moduli
+inline constexpr unsigned NUM_MOD_S   = 0u;    // default float moduli
+inline constexpr unsigned NUM_MOD_Z   = 0u;    // default double-complex moduli
+inline constexpr unsigned NUM_MOD_C   = 0u;    // default float-complex moduli
+inline constexpr bool FASTMODE_D      = false; // default double fastmode
+inline constexpr bool FASTMODE_S      = false; // default float fastmode
+inline constexpr bool FASTMODE_Z      = false; // default double-complex fastmode
+inline constexpr bool FASTMODE_C      = false; // default float-complex fastmode
+inline constexpr bool SCALE_A         = false; // default skip_scalA_switch
+inline constexpr bool SCALE_B         = false; // default skip_scalB_switch
+
 } // namespace initval
 
+// ---- Structure holding GEMM configuration ----
 struct Info_t {
     unsigned num_moduli    = 2;
     cublasOperation_t op_A = CUBLAS_OP_N;
@@ -34,18 +64,21 @@ struct Info_t {
     const void *B          = nullptr;
     int8_t *workA          = nullptr;
     int8_t *workB          = nullptr;
-    bool is_double         = true;
+    char Type              = 'N';
     bool fastmode          = false;
 };
-static std::unordered_map<cublasHandle_t, Info_t> last_info;
-static std::unordered_map<cublasHandle_t, void *> work_cache;
-static std::unordered_map<cublasHandle_t, size_t> work_size;
-static size_t max_workSize    = 0; // in byte
-static size_t max_workSizeA   = 0; // in byte
-static size_t max_workSizeB   = 0; // in byte
-static bool skip_scalA_switch = false;
-static bool skip_scalB_switch = false;
 
+// ---- Global caches (per-handle) ----
+static std::unordered_map<cublasHandle_t, Info_t> last_info;  // previous GEMM info
+static std::unordered_map<cublasHandle_t, void *> work_cache; // workspace memory cache
+static std::unordered_map<cublasHandle_t, size_t> work_size;  // cached size per handle
+static size_t max_workSize    = 0;                            // global workspace limit in byte
+static size_t max_workSizeA   = 0;                            // global workspace limit in byte
+static size_t max_workSizeB   = 0;                            // global workspace limit in byte
+static bool skip_scalA_switch = false;                        // env flag: skip A scaling
+static bool skip_scalB_switch = false;                        // env flag: skip B scaling
+
+// ---- Initialize maximum workspace size ----
 static void init_max_workspace() {
     if (max_workSize != 0) return; // already initialized
 
@@ -54,11 +87,13 @@ static void init_max_workspace() {
     size_t max_k        = initval::MAX_K;
     unsigned max_moduli = initval::MAX_NUM_MOD;
 
+    // Read environment overrides (optional)
     const char *sm   = getenv("GEMMUL8_MAX_M");
     const char *sn   = getenv("GEMMUL8_MAX_N");
     const char *sk   = getenv("GEMMUL8_MAX_K");
     const char *smod = getenv("GEMMUL8_MAX_NUM_MOD");
 
+    // Parse env values if present
     if (sm) {
         try {
             max_m = std::stoull(sm);
@@ -80,7 +115,24 @@ static void init_max_workspace() {
         } catch (...) {}
     }
 
-    max_workSize = gemmul8::workSize(max_m, max_n, max_k, max_moduli, true, true, &max_workSizeA, &max_workSizeB);
+    const char *nmz = getenv("GEMMUL8_NUM_MOD_Z");
+    const char *nmc = getenv("GEMMUL8_NUM_MOD_C");
+    unsigned NMOD_Z = 0u;
+    if (nmz) {
+        try {
+            NMOD_Z = std::stoul(nmz);
+        } catch (...) {}
+    }
+    unsigned NMOD_C = 0u;
+    if (nmc) {
+        try {
+            NMOD_C = std::stoul(nmc);
+        } catch (...) {}
+    }
+    if (NMOD_Z > 0 || NMOD_C > 0)
+        max_workSize = gemmul8::workSize<true>(max_m, max_n, max_k, max_moduli, true, true, &max_workSizeA, &max_workSizeB);
+    else
+        max_workSize = gemmul8::workSize<false>(max_m, max_n, max_k, max_moduli, true, true, &max_workSizeA, &max_workSizeB);
 }
 
 static inline void get_env_d(unsigned &num_moduli, bool &fastmode) {
@@ -94,9 +146,9 @@ static inline void get_env_d(unsigned &num_moduli, bool &fastmode) {
             num_moduli = std::stoul(nm);
         } catch (...) {}
     }
-    fastmode          = (fm ? std::string(fm) == std::string("1") : false);
-    skip_scalA_switch = (skipA ? std::string(skipA) == std::string("1") : false);
-    skip_scalB_switch = (skipB ? std::string(skipB) == std::string("1") : false);
+    fastmode          = (fm ? std::string(fm) == std::string("1") : initval::FASTMODE_D);
+    skip_scalA_switch = (skipA ? std::string(skipA) == std::string("1") : initval::SCALE_A);
+    skip_scalB_switch = (skipB ? std::string(skipB) == std::string("1") : initval::SCALE_B);
 }
 
 static inline void get_env_s(unsigned &num_moduli, bool &fastmode) {
@@ -110,9 +162,41 @@ static inline void get_env_s(unsigned &num_moduli, bool &fastmode) {
             num_moduli = std::stoul(nm);
         } catch (...) {}
     }
-    fastmode          = (fm ? std::string(fm) == std::string("1") : false);
-    skip_scalA_switch = (skipA ? std::string(skipA) == std::string("1") : false);
-    skip_scalB_switch = (skipB ? std::string(skipB) == std::string("1") : false);
+    fastmode          = (fm ? std::string(fm) == std::string("1") : initval::FASTMODE_S);
+    skip_scalA_switch = (skipA ? std::string(skipA) == std::string("1") : initval::SCALE_A);
+    skip_scalB_switch = (skipB ? std::string(skipB) == std::string("1") : initval::SCALE_B);
+}
+
+static inline void get_env_z(unsigned &num_moduli, bool &fastmode) {
+    const char *skipA = getenv("GEMMUL8_SKIP_SCALE_A");
+    const char *skipB = getenv("GEMMUL8_SKIP_SCALE_B");
+    const char *nm    = getenv("GEMMUL8_NUM_MOD_Z");
+    const char *fm    = getenv("GEMMUL8_FASTMODE_Z");
+    num_moduli        = initval::NUM_MOD_Z;
+    if (nm) {
+        try {
+            num_moduli = std::stoul(nm);
+        } catch (...) {}
+    }
+    fastmode          = (fm ? std::string(fm) == std::string("1") : initval::FASTMODE_Z);
+    skip_scalA_switch = (skipA ? std::string(skipA) == std::string("1") : initval::SCALE_A);
+    skip_scalB_switch = (skipB ? std::string(skipB) == std::string("1") : initval::SCALE_B);
+}
+
+static inline void get_env_c(unsigned &num_moduli, bool &fastmode) {
+    const char *skipA = getenv("GEMMUL8_SKIP_SCALE_A");
+    const char *skipB = getenv("GEMMUL8_SKIP_SCALE_B");
+    const char *nm    = getenv("GEMMUL8_NUM_MOD_C");
+    const char *fm    = getenv("GEMMUL8_FASTMODE_C");
+    num_moduli        = initval::NUM_MOD_C;
+    if (nm) {
+        try {
+            num_moduli = std::stoul(nm);
+        } catch (...) {}
+    }
+    fastmode          = (fm ? std::string(fm) == std::string("1") : initval::FASTMODE_C);
+    skip_scalA_switch = (skipA ? std::string(skipA) == std::string("1") : initval::SCALE_A);
+    skip_scalB_switch = (skipB ? std::string(skipB) == std::string("1") : initval::SCALE_B);
 }
 
 static cublasStatus_t get_work(cublasHandle_t handle, size_t req_size, void **ptr) {
@@ -193,33 +277,34 @@ extern "C" cublasStatus_t cublasDestroy_v2(cublasHandle_t handle) {
 // =======================
 extern "C" cublasStatus_t cublasSgemm_v2(
     cublasHandle_t handle,
-    cublasOperation_t transa,
-    cublasOperation_t transb,
-    int m,
-    int n,
-    int k,
+    cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k,
     const float *alpha,
-    const float *A,
-    int lda,
-    const float *B,
-    int ldb,
+    const float *A, int lda,
+    const float *B, int ldb,
     const float *beta,
-    float *C,
-    int ldc //
+    float *C, int ldc //
 ) {
 #ifdef __CUDA_ARCH__
     return CUBLAS_STATUS_NOT_SUPPORTED;
 
 #else
-    if (m == 0 || n == 0 || k == 0) return CUBLAS_STATUS_SUCCESS;
+    if (m <= 0 || n <= 0 || k <= 0) return CUBLAS_STATUS_SUCCESS;
     if (!A || !B || !C) return CUBLAS_STATUS_INVALID_VALUE;
 
     unsigned num_moduli;
     bool fastmode;
     get_env_s(num_moduli, fastmode);
 
+    if (num_moduli < 2u || 20u < num_moduli) {
+        using gemm_t            = cublasStatus_t (*)(cublasHandle_t, cublasOperation_t, cublasOperation_t, int, int, int, const float *, const float *, int, const float *, int, const float *, float *, int);
+        static gemm_t real_gemm = (gemm_t)dlsym(RTLD_NEXT, "cublasSgemm_v2");
+        if (!real_gemm) return CUBLAS_STATUS_NOT_INITIALIZED;
+        return real_gemm(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
+    }
+
     size_t wsizeA, wsizeB;
-    size_t wsize          = gemmul8::workSize(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
+    size_t wsize          = gemmul8::workSize<false>(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
     void *work            = nullptr;
     cublasStatus_t status = get_work(handle, wsize, &work);
     if (status != CUBLAS_STATUS_SUCCESS) return status;
@@ -233,7 +318,7 @@ extern "C" cublasStatus_t cublasSgemm_v2(
     bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
     bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
     Info_t &info_pre = last_info[handle];
-    if (info_pre.num_moduli == num_moduli && info_pre.k == k && !info_pre.is_double && info_pre.fastmode == fastmode) {
+    if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.Type == 'S' && info_pre.fastmode == fastmode) {
         if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
             skip_scalA = skip_scalA_switch && true;
         }
@@ -242,30 +327,16 @@ extern "C" cublasStatus_t cublasSgemm_v2(
         }
     }
 
-    gemmul8::gemm<float>(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha,
-        A,
-        lda,
-        B,
-        ldb,
-        beta,
-        C,
-        ldc,
-        num_moduli,
-        fastmode,
-        reinterpret_cast<void *>(workC),
-        reinterpret_cast<void *>(workA),
-        reinterpret_cast<void *>(workB),
-        skip_scalA_switch,
-        skip_scalB_switch,
-        skip_scalA,
-        skip_scalB);
+    gemmul8::gemm<float>(handle,
+                         transa, transb, m, n, k,
+                         alpha, A, lda, B, ldb,
+                         beta, C, ldc,
+                         num_moduli, fastmode,
+                         reinterpret_cast<void *>(workC),
+                         reinterpret_cast<void *>(workA),
+                         reinterpret_cast<void *>(workB),
+                         skip_scalA_switch, skip_scalB_switch,
+                         skip_scalA, skip_scalB);
 
     info_pre.num_moduli = num_moduli;
     info_pre.op_A       = transa;
@@ -279,7 +350,7 @@ extern "C" cublasStatus_t cublasSgemm_v2(
     info_pre.B          = B;
     info_pre.workA      = workA;
     info_pre.workB      = workB;
-    info_pre.is_double  = false;
+    info_pre.Type       = 'S';
     info_pre.fastmode   = fastmode;
 
     return CUBLAS_STATUS_SUCCESS;
@@ -292,33 +363,34 @@ extern "C" cublasStatus_t cublasSgemm_v2(
 // =======================
 extern "C" cublasStatus_t cublasDgemm_v2(
     cublasHandle_t handle,
-    cublasOperation_t transa,
-    cublasOperation_t transb,
-    int m,
-    int n,
-    int k,
+    cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k,
     const double *alpha,
-    const double *A,
-    int lda,
-    const double *B,
-    int ldb,
+    const double *A, int lda,
+    const double *B, int ldb,
     const double *beta,
-    double *C,
-    int ldc //
+    double *C, int ldc //
 ) {
 #ifdef __CUDA_ARCH__
     return CUBLAS_STATUS_NOT_SUPPORTED;
 
 #else
-    if (m == 0 || n == 0 || k == 0) return CUBLAS_STATUS_SUCCESS;
+    if (m <= 0 || n <= 0 || k <= 0) return CUBLAS_STATUS_SUCCESS;
     if (!A || !B || !C) return CUBLAS_STATUS_INVALID_VALUE;
 
     unsigned num_moduli;
     bool fastmode;
     get_env_d(num_moduli, fastmode);
 
+    if (num_moduli < 2u || 20u < num_moduli) {
+        using gemm_t            = cublasStatus_t (*)(cublasHandle_t, cublasOperation_t, cublasOperation_t, int, int, int, const double *, const double *, int, const double *, int, const double *, double *, int);
+        static gemm_t real_gemm = (gemm_t)dlsym(RTLD_NEXT, "cublasDgemm_v2");
+        if (!real_gemm) return CUBLAS_STATUS_NOT_INITIALIZED;
+        return real_gemm(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
+    }
+
     size_t wsizeA, wsizeB;
-    size_t wsize          = gemmul8::workSize(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
+    size_t wsize          = gemmul8::workSize<false>(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
     void *work            = nullptr;
     cublasStatus_t status = get_work(handle, wsize, &work);
     if (status != CUBLAS_STATUS_SUCCESS) return status;
@@ -332,7 +404,7 @@ extern "C" cublasStatus_t cublasDgemm_v2(
     bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
     bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
     Info_t &info_pre = last_info[handle];
-    if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.is_double && info_pre.fastmode == fastmode) {
+    if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.Type == 'D' && info_pre.fastmode == fastmode) {
         if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
             skip_scalA = true;
         }
@@ -341,30 +413,16 @@ extern "C" cublasStatus_t cublasDgemm_v2(
         }
     }
 
-    gemmul8::gemm<double>(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        alpha,
-        A,
-        lda,
-        B,
-        ldb,
-        beta,
-        C,
-        ldc,
-        num_moduli,
-        fastmode,
-        reinterpret_cast<void *>(workC),
-        reinterpret_cast<void *>(workA),
-        reinterpret_cast<void *>(workB),
-        skip_scalA_switch,
-        skip_scalB_switch,
-        skip_scalA,
-        skip_scalB);
+    gemmul8::gemm<double>(handle,
+                          transa, transb, m, n, k,
+                          alpha, A, lda, B, ldb,
+                          beta, C, ldc,
+                          num_moduli, fastmode,
+                          reinterpret_cast<void *>(workC),
+                          reinterpret_cast<void *>(workA),
+                          reinterpret_cast<void *>(workB),
+                          skip_scalA_switch, skip_scalB_switch,
+                          skip_scalA, skip_scalB);
 
     info_pre.num_moduli = num_moduli;
     info_pre.op_A       = transa;
@@ -378,7 +436,179 @@ extern "C" cublasStatus_t cublasDgemm_v2(
     info_pre.B          = B;
     info_pre.workA      = workA;
     info_pre.workB      = workB;
-    info_pre.is_double  = true;
+    info_pre.Type       = 'D';
+    info_pre.fastmode   = fastmode;
+
+    return CUBLAS_STATUS_SUCCESS;
+
+#endif
+}
+
+// =======================
+// Hook: cublasCgemm_v2
+// =======================
+extern "C" cublasStatus_t cublasCgemm_v2(
+    cublasHandle_t handle,
+    cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k,
+    const cuComplex *alpha,
+    const cuComplex *A, int lda,
+    const cuComplex *B, int ldb,
+    const cuComplex *beta,
+    cuComplex *C, int ldc //
+) {
+#ifdef __CUDA_ARCH__
+    return CUBLAS_STATUS_NOT_SUPPORTED;
+
+#else
+    if (m <= 0 || n <= 0 || k <= 0) return CUBLAS_STATUS_SUCCESS;
+    if (!A || !B || !C) return CUBLAS_STATUS_INVALID_VALUE;
+
+    unsigned num_moduli;
+    bool fastmode;
+    get_env_c(num_moduli, fastmode);
+
+    if (num_moduli < 2u || 20u < num_moduli) {
+        using gemm_t            = cublasStatus_t (*)(cublasHandle_t, cublasOperation_t, cublasOperation_t, int, int, int, const cuComplex *, const cuComplex *, int, const cuComplex *, int, const cuComplex *, cuComplex *, int);
+        static gemm_t real_gemm = (gemm_t)dlsym(RTLD_NEXT, "cublasCgemm_v2");
+        if (!real_gemm) return CUBLAS_STATUS_NOT_INITIALIZED;
+        return real_gemm(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
+    }
+
+    size_t wsizeA, wsizeB;
+    size_t wsize          = gemmul8::workSize<true>(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
+    void *work            = nullptr;
+    cublasStatus_t status = get_work(handle, wsize, &work);
+    if (status != CUBLAS_STATUS_SUCCESS) return status;
+
+    int8_t *workA        = reinterpret_cast<int8_t *>(work);
+    const size_t offsetA = max(max_workSizeA, wsizeA);
+    const size_t offsetB = max(max_workSizeB, wsizeB);
+    int8_t *workB        = workA + offsetA;
+    int8_t *workC        = workB + offsetB;
+
+    bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
+    bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
+    Info_t &info_pre = last_info[handle];
+    if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.Type == 'C' && info_pre.fastmode == fastmode) {
+        if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
+            skip_scalA = skip_scalA_switch && true;
+        }
+        if (skip_scalB_switch && info_pre.workB == workB && info_pre.B == B && info_pre.n == n && info_pre.ldb == ldb && info_pre.op_B == transb) {
+            skip_scalB = skip_scalB_switch && true;
+        }
+    }
+
+    gemmul8::gemm<cuComplex>(handle,
+                             transa, transb, m, n, k,
+                             alpha, A, lda, B, ldb,
+                             beta, C, ldc,
+                             num_moduli, fastmode,
+                             reinterpret_cast<void *>(workC),
+                             reinterpret_cast<void *>(workA),
+                             reinterpret_cast<void *>(workB),
+                             skip_scalA_switch, skip_scalB_switch,
+                             skip_scalA, skip_scalB);
+
+    info_pre.num_moduli = num_moduli;
+    info_pre.op_A       = transa;
+    info_pre.op_B       = transb;
+    info_pre.m          = m;
+    info_pre.n          = n;
+    info_pre.k          = k;
+    info_pre.lda        = lda;
+    info_pre.ldb        = ldb;
+    info_pre.A          = A;
+    info_pre.B          = B;
+    info_pre.workA      = workA;
+    info_pre.workB      = workB;
+    info_pre.Type       = 'C';
+    info_pre.fastmode   = fastmode;
+
+    return CUBLAS_STATUS_SUCCESS;
+
+#endif
+}
+
+// =======================
+// Hook: cublasZgemm_v2
+// =======================
+extern "C" cublasStatus_t cublasZgemm_v2(
+    cublasHandle_t handle,
+    cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k,
+    const cuDoubleComplex *alpha,
+    const cuDoubleComplex *A, int lda,
+    const cuDoubleComplex *B, int ldb,
+    const cuDoubleComplex *beta,
+    cuDoubleComplex *C, int ldc //
+) {
+#ifdef __CUDA_ARCH__
+    return CUBLAS_STATUS_NOT_SUPPORTED;
+
+#else
+    if (m <= 0 || n <= 0 || k <= 0) return CUBLAS_STATUS_SUCCESS;
+    if (!A || !B || !C) return CUBLAS_STATUS_INVALID_VALUE;
+
+    unsigned num_moduli;
+    bool fastmode;
+    get_env_z(num_moduli, fastmode);
+
+    if (num_moduli < 2u || 20u < num_moduli) {
+        using gemm_t            = cublasStatus_t (*)(cublasHandle_t, cublasOperation_t, cublasOperation_t, int, int, int, const cuDoubleComplex *, const cuDoubleComplex *, int, const cuDoubleComplex *, int, const cuDoubleComplex *, cuDoubleComplex *, int);
+        static gemm_t real_gemm = (gemm_t)dlsym(RTLD_NEXT, "cublasZgemm_v2");
+        if (!real_gemm) return CUBLAS_STATUS_NOT_INITIALIZED;
+        return real_gemm(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
+    }
+
+    size_t wsizeA, wsizeB;
+    size_t wsize          = gemmul8::workSize<true>(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
+    void *work            = nullptr;
+    cublasStatus_t status = get_work(handle, wsize, &work);
+    if (status != CUBLAS_STATUS_SUCCESS) return status;
+
+    int8_t *workA        = reinterpret_cast<int8_t *>(work);
+    const size_t offsetA = max(max_workSizeA, wsizeA);
+    const size_t offsetB = max(max_workSizeB, wsizeB);
+    int8_t *workB        = workA + offsetA;
+    int8_t *workC        = workB + offsetB;
+
+    bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
+    bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
+    Info_t &info_pre = last_info[handle];
+    if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.Type == 'Z' && info_pre.fastmode == fastmode) {
+        if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
+            skip_scalA = true;
+        }
+        if (skip_scalB_switch && info_pre.workB == workB && info_pre.B == B && info_pre.n == n && info_pre.ldb == ldb && info_pre.op_B == transb) {
+            skip_scalB = true;
+        }
+    }
+
+    gemmul8::gemm<cuDoubleComplex>(handle,
+                                   transa, transb, m, n, k,
+                                   alpha, A, lda, B, ldb,
+                                   beta, C, ldc,
+                                   num_moduli, fastmode,
+                                   reinterpret_cast<void *>(workC),
+                                   reinterpret_cast<void *>(workA),
+                                   reinterpret_cast<void *>(workB),
+                                   skip_scalA_switch, skip_scalB_switch,
+                                   skip_scalA, skip_scalB);
+
+    info_pre.num_moduli = num_moduli;
+    info_pre.op_A       = transa;
+    info_pre.op_B       = transb;
+    info_pre.m          = m;
+    info_pre.n          = n;
+    info_pre.k          = k;
+    info_pre.lda        = lda;
+    info_pre.ldb        = ldb;
+    info_pre.A          = A;
+    info_pre.B          = B;
+    info_pre.workA      = workA;
+    info_pre.workB      = workB;
+    info_pre.Type       = 'Z';
     info_pre.fastmode   = fastmode;
 
     return CUBLAS_STATUS_SUCCESS;
@@ -391,30 +621,20 @@ extern "C" cublasStatus_t cublasDgemm_v2(
 // =======================
 extern "C" cublasStatus_t cublasGemmEx(
     cublasHandle_t handle,
-    cublasOperation_t transa,
-    cublasOperation_t transb,
-    int m,
-    int n,
-    int k,
+    cublasOperation_t transa, cublasOperation_t transb,
+    int m, int n, int k,
     const void *alpha,
-    const void *A,
-    cudaDataType Atype,
-    int lda,
-    const void *B,
-    cudaDataType Btype,
-    int ldb,
+    const void *A, cudaDataType Atype, int lda,
+    const void *B, cudaDataType Btype, int ldb,
     const void *beta,
-    void *C,
-    cudaDataType Ctype,
-    int ldc,
-    cublasComputeType_t computeType,
-    cublasGemmAlgo_t algo //
+    void *C, cudaDataType Ctype, int ldc,
+    cublasComputeType_t computeType, cublasGemmAlgo_t algo //
 ) {
 #ifdef __CUDA_ARCH__
     return CUBLAS_STATUS_NOT_SUPPORTED;
 
 #else
-    if (m == 0 || n == 0 || k == 0) return CUBLAS_STATUS_SUCCESS;
+    if (m <= 0 || n <= 0 || k <= 0) return CUBLAS_STATUS_SUCCESS;
     if (!A || !B || !C) return CUBLAS_STATUS_INVALID_VALUE;
 
     // SGEMM
@@ -426,71 +646,62 @@ extern "C" cublasStatus_t cublasGemmEx(
         bool fastmode;
         get_env_s(num_moduli, fastmode);
 
-        size_t wsizeA, wsizeB;
-        size_t wsize          = gemmul8::workSize(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
-        void *work            = nullptr;
-        cublasStatus_t status = get_work(handle, wsize, &work);
-        if (status != CUBLAS_STATUS_SUCCESS) return status;
+        if (2u <= num_moduli && num_moduli <= 20u) {
+            size_t wsizeA, wsizeB;
+            size_t wsize          = gemmul8::workSize<false>(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
+            void *work            = nullptr;
+            cublasStatus_t status = get_work(handle, wsize, &work);
+            if (status != CUBLAS_STATUS_SUCCESS) return status;
 
-        int8_t *workA        = reinterpret_cast<int8_t *>(work);
-        const size_t offsetA = max(max_workSizeA, wsizeA);
-        const size_t offsetB = max(max_workSizeB, wsizeB);
-        int8_t *workB        = workA + offsetA;
-        int8_t *workC        = workB + offsetB;
+            int8_t *workA        = reinterpret_cast<int8_t *>(work);
+            const size_t offsetA = max(max_workSizeA, wsizeA);
+            const size_t offsetB = max(max_workSizeB, wsizeB);
+            int8_t *workB        = workA + offsetA;
+            int8_t *workC        = workB + offsetB;
 
-        bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
-        bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
-        Info_t &info_pre = last_info[handle];
-        if (info_pre.num_moduli == num_moduli && info_pre.k == k && !info_pre.is_double && info_pre.fastmode == fastmode) {
-            if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
-                skip_scalA = true;
+            bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
+            bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
+            Info_t &info_pre = last_info[handle];
+            if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.Type == 'S' && info_pre.fastmode == fastmode) {
+                if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
+                    skip_scalA = true;
+                }
+                if (skip_scalB_switch && info_pre.workB == workB && info_pre.B == B && info_pre.n == n && info_pre.ldb == ldb && info_pre.op_B == transb) {
+                    skip_scalB = true;
+                }
             }
-            if (skip_scalB_switch && info_pre.workB == workB && info_pre.B == B && info_pre.n == n && info_pre.ldb == ldb && info_pre.op_B == transb) {
-                skip_scalB = true;
-            }
+
+            gemmul8::gemm<float>(handle,
+                                 transa, transb, m, n, k,
+                                 reinterpret_cast<const float *>(alpha),
+                                 reinterpret_cast<const float *>(A), lda,
+                                 reinterpret_cast<const float *>(B), ldb,
+                                 reinterpret_cast<const float *>(beta),
+                                 reinterpret_cast<float *>(C), ldc,
+                                 num_moduli, fastmode,
+                                 reinterpret_cast<void *>(workC),
+                                 reinterpret_cast<void *>(workA),
+                                 reinterpret_cast<void *>(workB),
+                                 skip_scalA_switch, skip_scalB_switch,
+                                 skip_scalA, skip_scalB);
+
+            info_pre.num_moduli = num_moduli;
+            info_pre.op_A       = transa;
+            info_pre.op_B       = transb;
+            info_pre.m          = m;
+            info_pre.n          = n;
+            info_pre.k          = k;
+            info_pre.lda        = lda;
+            info_pre.ldb        = ldb;
+            info_pre.A          = A;
+            info_pre.B          = B;
+            info_pre.workA      = workA;
+            info_pre.workB      = workB;
+            info_pre.Type       = 'S';
+            info_pre.fastmode   = fastmode;
+
+            return CUBLAS_STATUS_SUCCESS;
         }
-
-        gemmul8::gemm<float>(
-            handle,
-            transa,
-            transb,
-            m,
-            n,
-            k,
-            reinterpret_cast<const float *>(alpha),
-            reinterpret_cast<const float *>(A),
-            lda,
-            reinterpret_cast<const float *>(B),
-            ldb,
-            reinterpret_cast<const float *>(beta),
-            reinterpret_cast<float *>(C),
-            ldc,
-            num_moduli,
-            fastmode,
-            reinterpret_cast<void *>(workC),
-            reinterpret_cast<void *>(workA),
-            reinterpret_cast<void *>(workB),
-            skip_scalA_switch,
-            skip_scalB_switch,
-            skip_scalA,
-            skip_scalB);
-
-        info_pre.num_moduli = num_moduli;
-        info_pre.op_A       = transa;
-        info_pre.op_B       = transb;
-        info_pre.m          = m;
-        info_pre.n          = n;
-        info_pre.k          = k;
-        info_pre.lda        = lda;
-        info_pre.ldb        = ldb;
-        info_pre.A          = A;
-        info_pre.B          = B;
-        info_pre.workA      = workA;
-        info_pre.workB      = workB;
-        info_pre.is_double  = false;
-        info_pre.fastmode   = fastmode;
-
-        return CUBLAS_STATUS_SUCCESS;
     }
 
     // DGEMM
@@ -502,98 +713,212 @@ extern "C" cublasStatus_t cublasGemmEx(
         bool fastmode;
         get_env_d(num_moduli, fastmode);
 
-        size_t wsizeA, wsizeB;
-        size_t wsize          = gemmul8::workSize(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
-        void *work            = nullptr;
-        cublasStatus_t status = get_work(handle, wsize, &work);
-        if (status != CUBLAS_STATUS_SUCCESS) return status;
+        if (2u <= num_moduli && num_moduli <= 20u) {
+            size_t wsizeA, wsizeB;
+            size_t wsize          = gemmul8::workSize<false>(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
+            void *work            = nullptr;
+            cublasStatus_t status = get_work(handle, wsize, &work);
+            if (status != CUBLAS_STATUS_SUCCESS) return status;
 
-        int8_t *workA        = reinterpret_cast<int8_t *>(work);
-        const size_t offsetA = max(max_workSizeA, wsizeA);
-        const size_t offsetB = max(max_workSizeB, wsizeB);
-        int8_t *workB        = workA + offsetA;
-        int8_t *workC        = workB + offsetB;
+            int8_t *workA        = reinterpret_cast<int8_t *>(work);
+            const size_t offsetA = max(max_workSizeA, wsizeA);
+            const size_t offsetB = max(max_workSizeB, wsizeB);
+            int8_t *workB        = workA + offsetA;
+            int8_t *workC        = workB + offsetB;
 
-        bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
-        bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
-        Info_t &info_pre = last_info[handle];
-        if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.is_double && info_pre.fastmode == fastmode) {
-            if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
-                skip_scalA = true;
+            bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
+            bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
+            Info_t &info_pre = last_info[handle];
+            if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.Type == 'D' && info_pre.fastmode == fastmode) {
+                if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
+                    skip_scalA = true;
+                }
+                if (skip_scalB_switch && info_pre.workB == workB && info_pre.B == B && info_pre.n == n && info_pre.ldb == ldb && info_pre.op_B == transb) {
+                    skip_scalB = true;
+                }
             }
-            if (skip_scalB_switch && info_pre.workB == workB && info_pre.B == B && info_pre.n == n && info_pre.ldb == ldb && info_pre.op_B == transb) {
-                skip_scalB = true;
-            }
+
+            gemmul8::gemm<double>(handle,
+                                  transa, transb, m, n, k,
+                                  reinterpret_cast<const double *>(alpha),
+                                  reinterpret_cast<const double *>(A), lda,
+                                  reinterpret_cast<const double *>(B), ldb,
+                                  reinterpret_cast<const double *>(beta),
+                                  reinterpret_cast<double *>(C), ldc,
+                                  num_moduli, fastmode,
+                                  reinterpret_cast<void *>(workC),
+                                  reinterpret_cast<void *>(workA),
+                                  reinterpret_cast<void *>(workB),
+                                  skip_scalA_switch, skip_scalB_switch,
+                                  skip_scalA, skip_scalB);
+
+            info_pre.num_moduli = num_moduli;
+            info_pre.op_A       = transa;
+            info_pre.op_B       = transb;
+            info_pre.m          = m;
+            info_pre.n          = n;
+            info_pre.k          = k;
+            info_pre.lda        = lda;
+            info_pre.ldb        = ldb;
+            info_pre.A          = A;
+            info_pre.B          = B;
+            info_pre.workA      = workA;
+            info_pre.workB      = workB;
+            info_pre.Type       = 'D';
+            info_pre.fastmode   = fastmode;
+
+            return CUBLAS_STATUS_SUCCESS;
         }
+    }
 
-        gemmul8::gemm<double>(
-            handle,
-            transa,
-            transb,
-            m,
-            n,
-            k,
-            reinterpret_cast<const double *>(alpha),
-            reinterpret_cast<const double *>(A),
-            lda,
-            reinterpret_cast<const double *>(B),
-            ldb,
-            reinterpret_cast<const double *>(beta),
-            reinterpret_cast<double *>(C),
-            ldc,
-            num_moduli,
-            fastmode,
-            reinterpret_cast<void *>(workC),
-            reinterpret_cast<void *>(workA),
-            reinterpret_cast<void *>(workB),
-            skip_scalA_switch,
-            skip_scalB_switch,
-            skip_scalA,
-            skip_scalB);
+    // CGEMM
+    if (computeType == CUBLAS_COMPUTE_32F &&
+        Atype == CUDA_C_32F &&
+        Btype == CUDA_C_32F &&
+        Ctype == CUDA_C_32F) {
+        unsigned num_moduli;
+        bool fastmode;
+        get_env_c(num_moduli, fastmode);
 
-        info_pre.num_moduli = num_moduli;
-        info_pre.op_A       = transa;
-        info_pre.op_B       = transb;
-        info_pre.m          = m;
-        info_pre.n          = n;
-        info_pre.k          = k;
-        info_pre.lda        = lda;
-        info_pre.ldb        = ldb;
-        info_pre.A          = A;
-        info_pre.B          = B;
-        info_pre.workA      = workA;
-        info_pre.workB      = workB;
-        info_pre.is_double  = true;
-        info_pre.fastmode   = fastmode;
+        if (2u <= num_moduli && num_moduli <= 20u) {
+            size_t wsizeA, wsizeB;
+            size_t wsize          = gemmul8::workSize<true>(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
+            void *work            = nullptr;
+            cublasStatus_t status = get_work(handle, wsize, &work);
+            if (status != CUBLAS_STATUS_SUCCESS) return status;
 
-        return CUBLAS_STATUS_SUCCESS;
+            int8_t *workA        = reinterpret_cast<int8_t *>(work);
+            const size_t offsetA = max(max_workSizeA, wsizeA);
+            const size_t offsetB = max(max_workSizeB, wsizeB);
+            int8_t *workB        = workA + offsetA;
+            int8_t *workC        = workB + offsetB;
+
+            bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
+            bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
+            Info_t &info_pre = last_info[handle];
+            if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.Type == 'C' && info_pre.fastmode == fastmode) {
+                if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
+                    skip_scalA = true;
+                }
+                if (skip_scalB_switch && info_pre.workB == workB && info_pre.B == B && info_pre.n == n && info_pre.ldb == ldb && info_pre.op_B == transb) {
+                    skip_scalB = true;
+                }
+            }
+
+            gemmul8::gemm<cuComplex>(handle,
+                                     transa, transb, m, n, k,
+                                     reinterpret_cast<const cuComplex *>(alpha),
+                                     reinterpret_cast<const cuComplex *>(A), lda,
+                                     reinterpret_cast<const cuComplex *>(B), ldb,
+                                     reinterpret_cast<const cuComplex *>(beta),
+                                     reinterpret_cast<cuComplex *>(C), ldc,
+                                     num_moduli, fastmode,
+                                     reinterpret_cast<void *>(workC),
+                                     reinterpret_cast<void *>(workA),
+                                     reinterpret_cast<void *>(workB),
+                                     skip_scalA_switch, skip_scalB_switch,
+                                     skip_scalA, skip_scalB);
+
+            info_pre.num_moduli = num_moduli;
+            info_pre.op_A       = transa;
+            info_pre.op_B       = transb;
+            info_pre.m          = m;
+            info_pre.n          = n;
+            info_pre.k          = k;
+            info_pre.lda        = lda;
+            info_pre.ldb        = ldb;
+            info_pre.A          = A;
+            info_pre.B          = B;
+            info_pre.workA      = workA;
+            info_pre.workB      = workB;
+            info_pre.Type       = 'C';
+            info_pre.fastmode   = fastmode;
+
+            return CUBLAS_STATUS_SUCCESS;
+        }
+    }
+
+    // ZGEMM
+    if (computeType == CUBLAS_COMPUTE_64F &&
+        Atype == CUDA_C_64F &&
+        Btype == CUDA_C_64F &&
+        Ctype == CUDA_C_64F) {
+        unsigned num_moduli;
+        bool fastmode;
+        get_env_z(num_moduli, fastmode);
+
+        if (2u <= num_moduli && num_moduli <= 20u) {
+            size_t wsizeA, wsizeB;
+            size_t wsize          = gemmul8::workSize<true>(m, n, k, num_moduli, skip_scalA_switch, skip_scalB_switch, &wsizeA, &wsizeB);
+            void *work            = nullptr;
+            cublasStatus_t status = get_work(handle, wsize, &work);
+            if (status != CUBLAS_STATUS_SUCCESS) return status;
+
+            int8_t *workA        = reinterpret_cast<int8_t *>(work);
+            const size_t offsetA = max(max_workSizeA, wsizeA);
+            const size_t offsetB = max(max_workSizeB, wsizeB);
+            int8_t *workB        = workA + offsetA;
+            int8_t *workC        = workB + offsetB;
+
+            bool skip_scalA  = false; // false (unskip scaling_A) or true (skip scaling_A)
+            bool skip_scalB  = false; // false (unskip scaling_B) or true (skip scaling_B)
+            Info_t &info_pre = last_info[handle];
+            if (info_pre.num_moduli == num_moduli && info_pre.k == k && info_pre.Type == 'Z' && info_pre.fastmode == fastmode) {
+                if (skip_scalA_switch && info_pre.workA == workA && info_pre.A == A && info_pre.m == m && info_pre.lda == lda && info_pre.op_A == transa) {
+                    skip_scalA = true;
+                }
+                if (skip_scalB_switch && info_pre.workB == workB && info_pre.B == B && info_pre.n == n && info_pre.ldb == ldb && info_pre.op_B == transb) {
+                    skip_scalB = true;
+                }
+            }
+
+            gemmul8::gemm<cuDoubleComplex>(handle,
+                                           transa, transb, m, n, k,
+                                           reinterpret_cast<const cuDoubleComplex *>(alpha),
+                                           reinterpret_cast<const cuDoubleComplex *>(A), lda,
+                                           reinterpret_cast<const cuDoubleComplex *>(B), ldb,
+                                           reinterpret_cast<const cuDoubleComplex *>(beta),
+                                           reinterpret_cast<cuDoubleComplex *>(C), ldc,
+                                           num_moduli, fastmode,
+                                           reinterpret_cast<void *>(workC),
+                                           reinterpret_cast<void *>(workA),
+                                           reinterpret_cast<void *>(workB),
+                                           skip_scalA_switch, skip_scalB_switch,
+                                           skip_scalA, skip_scalB);
+
+            info_pre.num_moduli = num_moduli;
+            info_pre.op_A       = transa;
+            info_pre.op_B       = transb;
+            info_pre.m          = m;
+            info_pre.n          = n;
+            info_pre.k          = k;
+            info_pre.lda        = lda;
+            info_pre.ldb        = ldb;
+            info_pre.A          = A;
+            info_pre.B          = B;
+            info_pre.workA      = workA;
+            info_pre.workB      = workB;
+            info_pre.Type       = 'Z';
+            info_pre.fastmode   = fastmode;
+
+            return CUBLAS_STATUS_SUCCESS;
+        }
     }
 
     // otherwise
-    using gemmEx_t = cublasStatus_t (*)(
-        cublasHandle_t,
-        cublasOperation_t,
-        cublasOperation_t,
-        int,
-        int,
-        int,
-        const void *,
-        const void *,
-        cudaDataType,
-        int,
-        const void *,
-        cudaDataType,
-        int,
-        const void *,
-        void *,
-        cudaDataType,
-        int,
-        cublasComputeType_t,
-        cublasGemmAlgo_t);
+    using gemm_t = cublasStatus_t (*)(cublasHandle_t,
+                                      cublasOperation_t, cublasOperation_t,
+                                      int, int, int,
+                                      const void *,
+                                      const void *, cudaDataType, int,
+                                      const void *, cudaDataType, int,
+                                      const void *,
+                                      void *, cudaDataType, int,
+                                      cublasComputeType_t, cublasGemmAlgo_t);
 
-    static gemmEx_t real_gemmEx = (gemmEx_t)dlsym(RTLD_NEXT, "cublasGemmEx");
-    if (!real_gemmEx) return CUBLAS_STATUS_NOT_INITIALIZED;
-    return real_gemmEx(handle, transa, transb, m, n, k, alpha, A, Atype, lda, B, Btype, ldb, beta, C, Ctype, ldc, computeType, algo);
+    static gemm_t real_gemm = (gemm_t)dlsym(RTLD_NEXT, "cublasGemmEx");
+    if (!real_gemm) return CUBLAS_STATUS_NOT_INITIALIZED;
+    return real_gemm(handle, transa, transb, m, n, k, alpha, A, Atype, lda, B, Btype, ldb, beta, C, Ctype, ldc, computeType, algo);
 
 #endif
 }

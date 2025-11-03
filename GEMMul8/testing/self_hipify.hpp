@@ -23,6 +23,8 @@
     #endif
     #define cublasSgemm_v2                 hipblasSgemm
     #define cublasDgemm_v2                 hipblasDgemm
+    #define cublasCgemm_v2                 hipblasCgemm
+    #define cublasZgemm_v2                 hipblasZgemm
     #define CUBLAS_OP_N                    HIPBLAS_OP_N
     #define CUBLAS_OP_T                    HIPBLAS_OP_T
     #define CUBLAS_OP_C                    HIPBLAS_OP_C

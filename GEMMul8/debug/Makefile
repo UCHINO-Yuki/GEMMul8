@@ -36,6 +36,12 @@ ifneq ($(GEMMUL8_MAX_NUM_MOD),)
 ENV_VAL += GEMMUL8_MAX_NUM_MOD=$(GEMMUL8_MAX_NUM_MOD)
 endif
 
+CFLAGS=
+CFLAGS += -DSGEMM
+CFLAGS += -DDGEMM
+CFLAGS += -DCGEMM
+CFLAGS += -DZGEMM
+
 LD:=../lib/libgemmul8.so
 TARGET1 := test
 TARGET2 := test_hijack
@@ -43,7 +49,7 @@ TARGET2 := test_hijack
 all: $(TARGET1) $(TARGET2)
 
 $(TARGET1): $(TARGET1).cu
-	$(COMPILER) $< $(FLAGS) $(ARCH) -o $@ $(LIBS)
+	$(COMPILER) $< $(FLAGS) $(CFLAGS) $(ARCH) -o $@ $(LIBS)
 
 $(TARGET2): $(TARGET2).cu
 	$(COMPILER) $< $(FLAGS) $(ARCH) -o $@ $(LIBS)

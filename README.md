@@ -1,8 +1,8 @@
 # GEMMul8<!-- omit in toc -->
 
-GEMMul8 (GEMMulate): GEMM emulation using int8 matrix engines based on Ozaki Scheme II
+GEMMul8 (GEMMulate): GEMM emulation using int8 matrix engines based on the Ozaki Scheme II
 
-GEMMul8 is a library for emulating high-precision matrix multiplication (SGEMM/DGEMM) using low-precision INT8 matrix engines.
+GEMMul8 is a library for emulating high-precision matrix multiplication (SGEMM/DGEMM/CGEMM/ZGEMM) using low-precision INT8 matrix engines.
 It is based on the Ozaki Scheme II, enabling bit-wise reproducible results with superior performance and power efficiency compared to native floating-point implementations.
 
 - [Technical Overview](#technical-overview)
@@ -86,7 +86,7 @@ To rebuild from scratch, run `make clean && make -j8`.
 >   - If you use these, please ensure compliance with their respective license terms.
 > - `BACKEND=auto` will attempt to detect your GPU vendor automatically.
 > - `GPU_ARCH=auto` will automatically detect and use the appropriate compute capability or architecture for your GPU.
-> - Target GPU architecture can be found from e.g., [NVIDIA GPU CC](https://developer.nvidia.com/cuda-gpus) or [AMD hardware specs](https://rocm.docs.amd.com/en/latest/reference/gpu-arch-specs.html).
+> - Target GPU architecture can be found from e.g., [CUDA GPU Compute Capability](https://developer.nvidia.com/cuda-gpus) or [AMD GPU hardware specifications](https://rocm.docs.amd.com/en/latest/reference/gpu-arch-specs.html).
 
 ### Example
 
@@ -118,8 +118,10 @@ Navigate to the `testing` directory and use `make` to run tests for different pr
 
 | Mode     | Value        | Description                                                     |
 | :------- | :----------- | :-------------------------------------------------------------- |
-| `test_f` | (no)         | Tests for SGEMM                                                 |
+| `test_s` | (no)         | Tests for SGEMM                                                 |
 | `test_d` | (no)         | Tests for DGEMM                                                 |
+| `test_c` | (no)         | Tests for CGEMM                                                 |
+| `test_z` | (no)         | Tests for ZGEMM                                                 |
 | `MODE`   | `accuracy`   | Tests numerical accuracy (maximum element-wise relative error). |
 |          | `flops`      | Measures TFLOPS with square matrices.                           |
 |          | `watt`       | Measures watt and GFLOPS/watt with square matrices.             |
@@ -136,12 +138,12 @@ make test_d MODE="accuracy"
 
 ```bash
 # Run all tests (SGEMM)
-make test_f MODE="all"
+make test_s MODE="all"
 ```
 
 ```bash
 # Run accuracy, flops, & watt tests (SGEMM & DGEMM)
-make test_f test_d MODE="accuracy flops watt"
+make test_s test_d MODE="accuracy flops watt"
 ```
 
 ## Usage
@@ -201,6 +203,7 @@ GEMMul8 provides both a workspace query function (`workSize`) and an extended GE
 namespace gemmul8 {
 
 // workSize returns the required workspace size in bytes.
+template <bool is_Complex = false>          // [option] If true, return workspace size for CGEMM/ZGEMM
 size_t workSize(
     const size_t m,                         // Number of rows of C
     const size_t n,                         // Number of columns of C
@@ -364,8 +367,11 @@ Intercept standard GEMM calls automatically without modifying the application so
 
 #### Interception target
 
-- `cublasSgemm`, `cublasDgemm`, `cublasSgemm_v2`, `cublasDgemm_v2`, `cublasGemmEx`
-- `hipblasSgemm`, `hipblasDgemm`, `hipblasGemmEx`, `hipblasGemmEx_v2`
+- `cublasSgemm`, `cublasDgemm`, `cublasCgemm`, `cublasZgemm`
+- `cublasSgemm_v2`, `cublasDgemm_v2`, `cublasCgemm_v2`, `cublasZgemm_v2`
+- `cublasGemmEx`
+- `hipblasSgemm`, `hipblasDgemm`, `hipblasCgemm`, `hipblasZgemm`
+- `hipblasGemmEx`, `hipblasGemmEx_v2`
 
 #### How to enable the hook
 
@@ -383,8 +389,12 @@ export LD_PRELOAD=/path-to-GEMMul8/lib/libgemmul8.so
 ```bash
 export GEMMUL8_NUM_MOD_D=15
 export GEMMUL8_NUM_MOD_S=7
+export GEMMUL8_NUM_MOD_Z=15
+export GEMMUL8_NUM_MOD_C=7
 export GEMMUL8_FASTMODE_D=1
 export GEMMUL8_FASTMODE_S=0
+export GEMMUL8_FASTMODE_Z=1
+export GEMMUL8_FASTMODE_C=0
 export GEMMUL8_MAX_M=4096
 export GEMMUL8_MAX_N=4096
 export GEMMUL8_MAX_K=4096
@@ -395,25 +405,31 @@ export GEMMUL8_SKIP_SCALE_B=1
 
 | Variable               | Default | Applies to | Description                                                                          |
 | :--------------------- | :------ | :--------- | :----------------------------------------------------------------------------------- |
-| `GEMMUL8_NUM_MOD_D`    | `2`     | DGEMM      | Number of moduli (`unsigned num_moduli`) used in DGEMM emulation. Controls accuracy. |
-| `GEMMUL8_NUM_MOD_S`    | `2`     | SGEMM      | Number of moduli (`unsigned num_moduli`) used in SGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_D`    | `0`     | DGEMM      | Number of moduli (`unsigned num_moduli`) used in DGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_S`    | `0`     | SGEMM      | Number of moduli (`unsigned num_moduli`) used in SGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_Z`    | `0`     | ZGEMM      | Number of moduli (`unsigned num_moduli`) used in ZGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_C`    | `0`     | CGEMM      | Number of moduli (`unsigned num_moduli`) used in CGEMM emulation. Controls accuracy. |
 | `GEMMUL8_FASTMODE_D`   | `0`     | DGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
 | `GEMMUL8_FASTMODE_S`   | `0`     | SGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
-| `GEMMUL8_MAX_M`        | `0`     | both       | Maximum value of `M` used to preallocate workspace memory.                           |
-| `GEMMUL8_MAX_N`        | `0`     | both       | Maximum value of `N` used to preallocate workspace memory.                           |
-| `GEMMUL8_MAX_K`        | `0`     | both       | Maximum value of `K` used to preallocate workspace memory.                           |
-| `GEMMUL8_MAX_NUM_MOD`  | `2`     | both       | Maximum number of moduli used when computing the size of the preallocated workspace. |
-| `GEMMUL8_SKIP_SCALE_A` | `0`     | both       | Enables skipping redundant preprocessing for `A` (`1` = enable, `0` = disable).      |
-| `GEMMUL8_SKIP_SCALE_B` | `0`     | both       | Enables skipping redundant preprocessing for `B` (`1` = enable, `0` = disable).      |
+| `GEMMUL8_FASTMODE_Z`   | `0`     | ZGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_FASTMODE_C`   | `0`     | CGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_MAX_M`        | `0`     | all        | Maximum value of `M` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_N`        | `0`     | all        | Maximum value of `N` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_K`        | `0`     | all        | Maximum value of `K` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_NUM_MOD`  | `2`     | all        | Maximum number of moduli used when computing the size of the preallocated workspace. |
+| `GEMMUL8_SKIP_SCALE_A` | `0`     | all        | Enables skipping redundant preprocessing for `A` (`1` = enable, `0` = disable).      |
+| `GEMMUL8_SKIP_SCALE_B` | `0`     | all        | Enables skipping redundant preprocessing for `B` (`1` = enable, `0` = disable).      |
 
+- If `GEMMUL8_NUM_MOD_{S|D|Z|C} < 2 || 20 < GEMMUL8_NUM_MOD_{S|D|Z|C}`, execute the corresponding native gemm routine.
 - This hook mode preallocates a single large GPU workspace on demand and resizes as needed.
 - Each `cublasHandle_t` maintains an independent workspace.
 - The workspace is automatically released when the corresponding handle is destroyed via `cublasDestroy()` or `cublasDestroy_v2()`.
 - Workspace size is determined as `max(wsmax, ws, pre_ws)`, where
   - `wsmax  = workSize(GEMMUL8_MAX_M, GEMMUL8_MAX_N, GEMMUL8_MAX_K, GEMMUL8_MAX_NUM_MOD)`
-  - `ws     = workSize(m, n, k, GEMMUL8_NUM_MOD_{D|S})`
+  - `ws     = workSize(m, n, k, GEMMUL8_NUM_MOD_{D|S|Z|C})`
   - `pre_ws =` the size of the previously allocated workspace for the same `cublasHandle_t`
 - If `GEMMUL8_MAX_{M|N|K|NUM_MOD}` variables are set appropriately, the workspace size becomes fixed to `wsmax`, avoiding costly reallocations during subsequent GEMM calls.
+- If `GEMMUL8_NUM_MOD_Z > 0` or `GEMMUL8_NUM_MOD_C > 0`, `wsmax` is workspace size for complex cases.
 - The workspace is **never shrunk** automatically; it only grows when a larger allocation is required.
 - When `GEMMUL8_SKIP_SCALE_{A|B}=1`, redundant preprocessing for `A`/`B` is skipped (see below).
 
@@ -427,7 +443,7 @@ export GEMMUL8_SKIP_SCALE_B=1
 >   4. The same device pointer (`A` or `B`) is used for both the previous and current calls.
 >   5. The same matrix shapes (`M`/`K`/`lda` for `A`, `K`/`N`/`ldb` for `B`) are used for both the previous and current calls.
 >   6. The same operation flag (`transa` for `A`, `transb` for `B`) is used for both the previous and current calls.
->   7. The same number of moduli (`GEMMUL8_NUM_MOD_{D|S}`) is used for both the previous and current calls.
+>   7. The same number of moduli (`GEMMUL8_NUM_MOD_{D|S|Z|C}`) is used for both the previous and current calls.
 >   8. The same workspace size (`ws`) is used for both the previous and current calls.
 
 > [!TIP]

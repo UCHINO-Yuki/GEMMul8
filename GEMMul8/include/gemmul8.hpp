@@ -13,8 +13,10 @@
 
 namespace gemmul8 {
 
-// workSize returns the required workspace size in bytes.
-size_t workSize(
+/***
+ * workSize returns the required workspace size in bytes.
+ */
+template <bool is_Complex = false> size_t workSize(
     const size_t m,                         // Number of rows of C
     const size_t n,                         // Number of columns of C
     const size_t k,                         // Inner dimension <= 2^17
@@ -25,7 +27,9 @@ size_t workSize(
     size_t *workSizeB            = nullptr  // [option] Output: workspace size used for B8i and sftB
 );
 
-// gemm returns computation time in second of each computational phase
+/***
+ * GEMM emulation using INT8 Tensor Cores
+ */
 #if defined(__NVCC__)
 template <typename T> std::vector<double> gemm(
     cublasHandle_t handle,                  // Handle to the cuBLAS library context
@@ -49,8 +53,8 @@ template <typename T> std::vector<double> gemm(
     void *const workB            = nullptr, // [optional] Separate workspace for B (if nullptr, uses work)
     const bool enable_skip_scalA = false,   // [optional] Enables scaling-skip mechanism for A
     const bool enable_skip_scalB = false,   // [optional] Enables scaling-skip mechanism for B
-    bool skip_scalA              = false,   // [optional] If true, skip preprocessing for A
-    bool skip_scalB              = false    // [optional] If true, skip preprocessing for B
+    const bool skip_scalA        = false,   // [optional] If true, skip preprocessing for A
+    const bool skip_scalB        = false    // [optional] If true, skip preprocessing for B
 );
 #endif
 
@@ -77,8 +81,8 @@ template <typename T> std::vector<double> gemm(
     void *const workB            = nullptr, // [optional] Separate workspace for B (if nullptr, uses work)
     const bool enable_skip_scalA = false,   // [optional] Enables scaling-skip mechanism for A
     const bool enable_skip_scalB = false,   // [optional] Enables scaling-skip mechanism for B
-    bool skip_scalA              = false,   // [optional] If true, skip preprocessing for A
-    bool skip_scalB              = false    // [optional] If true, skip preprocessing for B
+    const bool skip_scalA        = false,   // [optional] If true, skip preprocessing for A
+    const bool skip_scalB        = false    // [optional] If true, skip preprocessing for B
 );
 #endif
 

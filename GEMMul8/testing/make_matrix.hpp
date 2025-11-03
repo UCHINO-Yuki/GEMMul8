@@ -167,4 +167,25 @@ void f2d(size_t m,              // rows of A
     cudaDeviceSynchronize();
 }
 
+__global__ void f2d_kernel(size_t sizeA, const cuComplex *const __restrict__ in, cuDoubleComplex *const __restrict__ out) {
+    const auto idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx >= sizeA) return;
+    cuComplex intmp = in[idx];
+    cuDoubleComplex outtmp;
+    outtmp.x = static_cast<double>(intmp.x);
+    outtmp.y = static_cast<double>(intmp.y);
+    out[idx] = outtmp;
+}
+
+void f2d(size_t m,                   // rows of A
+         size_t n,                   // columns of A
+         const cuComplex *const in,  // input
+         cuDoubleComplex *const out) // output
+{
+    constexpr size_t block_size = 256;
+    const size_t grid_size      = (m * n + block_size - 1) / block_size;
+    f2d_kernel<<<grid_size, block_size>>>(m * n, in, out);
+    cudaDeviceSynchronize();
+}
+
 } // namespace makemat

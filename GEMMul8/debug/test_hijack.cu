@@ -33,14 +33,20 @@ void fill_random(float *data, int n) {
 void run_dgemm(cublasHandle_t handle, const double *dA, const double *dB, double *dC, double *dC2, int m, int n, int k) {
     const double alpha = 1.0, beta = 0.0;
 
+    std::cout << "HIJACK DGEMM" << std::endl;
+    cudaDeviceSynchronize();
     CHECK_CUBLAS(cublasDgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, dA, m, dB, k, &beta, dC, m));
+    cudaDeviceSynchronize();
 
-    const unsigned num_moduli = 20u;                                    // Accuracy knob: 2 <= num_moduli <= 20
-    const bool fastmode       = false;                                  // true (fast mode) or false (accurate mode)
-    const size_t worksize     = gemmul8::workSize(m, n, k, num_moduli); // calculate required memory (Byte)
+    const unsigned num_moduli = 20u;                                           // Accuracy knob: 2 <= num_moduli <= 20
+    const bool fastmode       = false;                                         // true (fast mode) or false (accurate mode)
+    const size_t worksize     = gemmul8::workSize<false>(m, n, k, num_moduli); // calculate required memory (Byte)
     void *work;
     cudaMalloc(&work, worksize);
-    gemmul8::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, dA, m, dB, k, &beta, dC2, m, num_moduli, fastmode, work);
+    std::cout << "gemmul8 DGEMM" << std::endl;
+    cudaDeviceSynchronize();
+    gemmul8::gemm<double>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, dA, m, dB, k, &beta, dC2, m, num_moduli, fastmode, work, nullptr, nullptr, false, false, false, false);
+    cudaDeviceSynchronize();
 
     std::vector<double> hC(m * n), hC2(m * n);
     CHECK_CUDA(cudaMemcpy(hC.data(), dC, sizeof(double) * m * n, cudaMemcpyDeviceToHost));
@@ -51,9 +57,9 @@ void run_dgemm(cublasHandle_t handle, const double *dA, const double *dB, double
         double diff = hC[i] - hC2[i];
         err_chk += diff * diff;
     }
-    std::cout << "[DGEMM] L2 error: " << err_chk << std::endl;
-    if (err_chk > 1e-3)
-        std::cout << "L2 Error Too High!" << std::endl;
+    std::cout << "[DGEMM] L2 error: " << err_chk;
+    if (err_chk > 1e-6) std::cout << "  L2 Error Too High!";
+    std::cout << std::endl;
 
     cudaFree(work);
 }
@@ -61,14 +67,20 @@ void run_dgemm(cublasHandle_t handle, const double *dA, const double *dB, double
 void run_sgemm(cublasHandle_t handle, const float *dA, const float *dB, float *dC, float *dC2, int m, int n, int k) {
     const float alpha = 1.0f, beta = 0.0f;
 
+    std::cout << "HIJACK SGEMM" << std::endl;
+    cudaDeviceSynchronize();
     CHECK_CUBLAS(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, dA, m, dB, k, &beta, dC, m));
+    cudaDeviceSynchronize();
 
-    const unsigned num_moduli = 20u;                                    // Accuracy knob: 2 <= num_moduli <= 20
-    const bool fastmode       = false;                                  // true (fast mode) or false (accurate mode)
-    const size_t worksize     = gemmul8::workSize(m, n, k, num_moduli); // calculate required memory (Byte)
+    const unsigned num_moduli = 15u;                                           // Accuracy knob: 2 <= num_moduli <= 20
+    const bool fastmode       = false;                                         // true (fast mode) or false (accurate mode)
+    const size_t worksize     = gemmul8::workSize<false>(m, n, k, num_moduli); // calculate required memory (Byte)
     void *work;
     cudaMalloc(&work, worksize);
-    gemmul8::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, dA, m, dB, k, &beta, dC2, m, num_moduli, fastmode, work);
+    std::cout << "gemmul8 SGEMM" << std::endl;
+    cudaDeviceSynchronize();
+    gemmul8::gemm<float>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, dA, m, dB, k, &beta, dC2, m, num_moduli, fastmode, work, nullptr, nullptr, false, false, false, false);
+    cudaDeviceSynchronize();
 
     std::vector<float> hC(m * n), hC2(m * n);
     CHECK_CUDA(cudaMemcpy(hC.data(), dC, sizeof(float) * m * n, cudaMemcpyDeviceToHost));
@@ -79,9 +91,9 @@ void run_sgemm(cublasHandle_t handle, const float *dA, const float *dB, float *d
         double diff = static_cast<double>(hC[i]) - static_cast<double>(hC2[i]);
         err_chk += diff * diff;
     }
-    std::cout << "[SGEMM] L2 error: " << err_chk << std::endl;
-    if (err_chk > 1e-3)
-        std::cout << "L2 Error Too High!" << std::endl;
+    std::cout << "[SGEMM] L2 error: " << err_chk;
+    if (err_chk > 1e-3) std::cout << "  L2 Error Too High!";
+    std::cout << std::endl;
 
     cudaFree(work);
 }
@@ -94,54 +106,54 @@ int main() {
     int m2 = 120, k2 = 70, n2 = 110; // A2: m2×k2, B2: k2×n2
 
     double *A1, *A2, *B1, *B2;
-    A1 = (double *)malloc(sizeof(double) * m1 * k1);
-    A2 = (double *)malloc(sizeof(double) * m2 * k2);
-    B1 = (double *)malloc(sizeof(double) * k1 * n1);
-    B2 = (double *)malloc(sizeof(double) * k2 * n2);
-    fill_random(A1, m1 * k1);
-    fill_random(A2, m2 * k2);
-    fill_random(B1, k1 * n1);
-    fill_random(B2, k2 * n2);
+    A1 = (double *)malloc(sizeof(double) * 120 * 120);
+    A2 = (double *)malloc(sizeof(double) * 120 * 120);
+    B1 = (double *)malloc(sizeof(double) * 120 * 120);
+    B2 = (double *)malloc(sizeof(double) * 120 * 120);
+    fill_random(A1, 120 * 120);
+    fill_random(A2, 120 * 120);
+    fill_random(B1, 120 * 120);
+    fill_random(B2, 120 * 120);
 
     float *sA1, *sA2, *sB1, *sB2;
-    sA1 = (float *)malloc(sizeof(float) * m1 * k1);
-    sA2 = (float *)malloc(sizeof(float) * m2 * k2);
-    sB1 = (float *)malloc(sizeof(float) * k1 * n1);
-    sB2 = (float *)malloc(sizeof(float) * k2 * n2);
-    fill_random(sA1, m1 * k1);
-    fill_random(sA2, m2 * k2);
-    fill_random(sB1, k1 * n1);
-    fill_random(sB2, k2 * n2);
+    sA1 = (float *)malloc(sizeof(float) * 120 * 120);
+    sA2 = (float *)malloc(sizeof(float) * 120 * 120);
+    sB1 = (float *)malloc(sizeof(float) * 120 * 120);
+    sB2 = (float *)malloc(sizeof(float) * 120 * 120);
+    fill_random(sA1, 120 * 120);
+    fill_random(sA2, 120 * 120);
+    fill_random(sB1, 120 * 120);
+    fill_random(sB2, 120 * 120);
 
     double *dA1, *dA2, *dB1, *dB2, *dCd, *dCd2;
     float *dsA1, *dsA2, *dsB1, *dsB2, *dsC, *dsC2;
 
-    CHECK_CUDA(cudaMalloc(&dA1, sizeof(double) * m1 * k1));
-    CHECK_CUDA(cudaMalloc(&dA2, sizeof(double) * m2 * k2));
-    CHECK_CUDA(cudaMalloc(&dB1, sizeof(double) * k1 * n1));
-    CHECK_CUDA(cudaMalloc(&dB2, sizeof(double) * k2 * n2));
+    CHECK_CUDA(cudaMalloc(&dA1, sizeof(double) * 120 * 120));
+    CHECK_CUDA(cudaMalloc(&dA2, sizeof(double) * 120 * 120));
+    CHECK_CUDA(cudaMalloc(&dB1, sizeof(double) * 120 * 120));
+    CHECK_CUDA(cudaMalloc(&dB2, sizeof(double) * 120 * 120));
 
-    CHECK_CUDA(cudaMalloc(&dsA1, sizeof(float) * m1 * k1));
-    CHECK_CUDA(cudaMalloc(&dsA2, sizeof(float) * m2 * k2));
-    CHECK_CUDA(cudaMalloc(&dsB1, sizeof(float) * k1 * n1));
-    CHECK_CUDA(cudaMalloc(&dsB2, sizeof(float) * k2 * n2));
+    CHECK_CUDA(cudaMalloc(&dsA1, sizeof(float) * 120 * 120));
+    CHECK_CUDA(cudaMalloc(&dsA2, sizeof(float) * 120 * 120));
+    CHECK_CUDA(cudaMalloc(&dsB1, sizeof(float) * 120 * 120));
+    CHECK_CUDA(cudaMalloc(&dsB2, sizeof(float) * 120 * 120));
 
-    int maxCd = std::max({m1 * n1, m1 * n2, m2 * n1, m2 * n2});
+    int maxCd = 120 * 120;
     int maxCs = maxCd;
     CHECK_CUDA(cudaMalloc(&dCd, sizeof(double) * maxCd));
     CHECK_CUDA(cudaMalloc(&dsC, sizeof(float) * maxCs));
     CHECK_CUDA(cudaMalloc(&dCd2, sizeof(double) * maxCd));
     CHECK_CUDA(cudaMalloc(&dsC2, sizeof(float) * maxCs));
 
-    CHECK_CUDA(cudaMemcpy(dA1, A1, sizeof(double) * m1 * k1, cudaMemcpyHostToDevice));
-    CHECK_CUDA(cudaMemcpy(dA2, A2, sizeof(double) * m2 * k2, cudaMemcpyHostToDevice));
-    CHECK_CUDA(cudaMemcpy(dB1, B1, sizeof(double) * k1 * n1, cudaMemcpyHostToDevice));
-    CHECK_CUDA(cudaMemcpy(dB2, B2, sizeof(double) * k2 * n2, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(dA1, A1, sizeof(double) * 120 * 120, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(dA2, A2, sizeof(double) * 120 * 120, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(dB1, B1, sizeof(double) * 120 * 120, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(dB2, B2, sizeof(double) * 120 * 120, cudaMemcpyHostToDevice));
 
-    CHECK_CUDA(cudaMemcpy(dsA1, sA1, sizeof(float) * m1 * k1, cudaMemcpyHostToDevice));
-    CHECK_CUDA(cudaMemcpy(dsA2, sA2, sizeof(float) * m2 * k2, cudaMemcpyHostToDevice));
-    CHECK_CUDA(cudaMemcpy(dsB1, sB1, sizeof(float) * k1 * n1, cudaMemcpyHostToDevice));
-    CHECK_CUDA(cudaMemcpy(dsB2, sB2, sizeof(float) * k2 * n2, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(dsA1, sA1, sizeof(float) * 120 * 120, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(dsA2, sA2, sizeof(float) * 120 * 120, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(dsB1, sB1, sizeof(float) * 120 * 120, cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(dsB2, sB2, sizeof(float) * 120 * 120, cudaMemcpyHostToDevice));
 
     cublasHandle_t handle;
     CHECK_CUBLAS(cublasCreate(&handle));
