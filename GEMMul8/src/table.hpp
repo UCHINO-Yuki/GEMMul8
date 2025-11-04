@@ -65,7 +65,7 @@ constexpr float2 moduli_f[19] = {
     {-173.0F, 0x1.7ad2200000000p-8F}
 };
 
-// floor(2^32/p(i))
+// moduli & floor(2^32/p(i))
 constexpr int2 moduli_i[19] = {
     {255, 16843009},
     {253, 16976155},

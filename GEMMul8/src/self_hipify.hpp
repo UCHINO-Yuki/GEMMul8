@@ -22,14 +22,16 @@
     #define CUBLAS_STATUS_ALLOC_FAILED    HIPBLAS_STATUS_ALLOC_FAILED
     #define CUBLAS_STATUS_NOT_INITIALIZED HIPBLAS_STATUS_NOT_INITIALIZED
     #if defined(HIPBLAS_V2)
-        #define cublasGemmEx hipblasGemmEx
+        #define cublasGemmEx   hipblasGemmEx
+        #define cublasCgemm_v2 hipblasCgemm
+        #define cublasZgemm_v2 hipblasZgemm
     #else
-        #define cublasGemmEx hipblasGemmEx_v2
+        #define cublasGemmEx   hipblasGemmEx_v2
+        #define cublasCgemm_v2 hipblasCgemm_v2
+        #define cublasZgemm_v2 hipblasZgemm_v2
     #endif
     #define cublasSgemm_v2                 hipblasSgemm
     #define cublasDgemm_v2                 hipblasDgemm
-    #define cublasCgemm_v2                 hipblasCgemm
-    #define cublasZgemm_v2                 hipblasZgemm
     #define CUBLAS_OP_N                    HIPBLAS_OP_N
     #define CUBLAS_OP_T                    HIPBLAS_OP_T
     #define CUBLAS_OP_C                    HIPBLAS_OP_C
@@ -78,6 +80,7 @@
     #define cuCfmaf                hipCfmaf
     #define cuCabs                 hipCabs
     #define cuCsub                 hipCsub
+    #define cuCsubf                hipCsubf
     #define cuComplexFloatToDouble hipComplexFloatToDouble
     #define cuComplexDoubleToFloat hipComplexDoubleToFloat
 

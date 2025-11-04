@@ -17,14 +17,16 @@
     #define CUBLAS_STATUS_SUCCESS       HIPBLAS_STATUS_SUCCESS
     #define CUBLAS_STATUS_NOT_SUPPORTED HIPBLAS_STATUS_NOT_SUPPORTED
     #if defined(HIPBLAS_V2)
-        #define cublasGemmEx hipblasGemmEx
+        #define cublasGemmEx   hipblasGemmEx
+        #define cublasCgemm_v2 hipblasCgemm
+        #define cublasZgemm_v2 hipblasZgemm
     #else
-        #define cublasGemmEx hipblasGemmEx_v2
+        #define cublasGemmEx   hipblasGemmEx_v2
+        #define cublasCgemm_v2 hipblasCgemm_v2
+        #define cublasZgemm_v2 hipblasZgemm_v2
     #endif
     #define cublasSgemm_v2                 hipblasSgemm
     #define cublasDgemm_v2                 hipblasDgemm
-    #define cublasCgemm_v2                 hipblasCgemm
-    #define cublasZgemm_v2                 hipblasZgemm
     #define CUBLAS_OP_N                    HIPBLAS_OP_N
     #define CUBLAS_OP_T                    HIPBLAS_OP_T
     #define CUBLAS_OP_C                    HIPBLAS_OP_C

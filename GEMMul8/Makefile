@@ -130,13 +130,16 @@ HOOK_SRC    := src/hook.cu
 HOOK_OBJ    := src/hook.o
 SHARED_OBJ := src/gemmul8_shared.o
 FLAGS_SHARED := $(FLAGS) -Xcompiler -fPIC
+ifeq ($(BACKEND),cuda)
+FLAGS_SHARED += -diag-suppress 177
+endif
 
 $(SHARED_OBJ): $(CU_FILES) $(HEADERS)
 	$(COMPILER) $(FLAGS_SHARED) -c $(CU_FILES) -o $(SHARED_OBJ)
 	
 hook: $(SHARED_OBJ)
 	mkdir -p lib
-	$(COMPILER) $(FLAGS_SHARED) -c $(HOOK_SRC) -o $(HOOK_OBJ) -diag-suppress 177
+	$(COMPILER) $(FLAGS_SHARED) -c $(HOOK_SRC) -o $(HOOK_OBJ)
 	$(COMPILER) -shared $(FLAGS_SHARED) -o $(HOOK_TARGET) $(SHARED_OBJ) $(HOOK_OBJ) $(LIBS)
 
 clean:
