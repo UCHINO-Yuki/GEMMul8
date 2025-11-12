@@ -188,4 +188,4 @@ test_c:
 
 clean:
 	rm -f *.o
-	rm -f $(TARGET_d) $(TARGET_f)
+	rm -f $(TARGET_d) $(TARGET_f) $(TARGET_z) $(TARGET_c)
