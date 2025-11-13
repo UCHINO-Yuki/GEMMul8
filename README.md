@@ -31,7 +31,6 @@ It is based on the Ozaki Scheme II, enabling bit-wise reproducible results with 
   - [Accuracy](#accuracy)
   - [Throughput performance](#throughput-performance)
   - [Power efficiency](#power-efficiency)
-  - [Supplementary Experiment on a B200](#supplementary-experiment-on-a-b200)
 - [Acknowledgment](#acknowledgment)
   - [Assistance with debugging](#assistance-with-debugging)
   - [Assistance with experiments on a B200 GPU](#assistance-with-experiments-on-a-b200-gpu)
@@ -483,43 +482,32 @@ See all numerical results in the separate repository: [GEMMul8_numerical_results
 
 ### Environments
 
-- NVIDIA A100 SXM4 GPU with an AMD EPYC 7713 CPU , CUDA Toolkit 12.9.86, and gcc 11.5.0
+- NVIDIA A100 SXM4 GPU with an AMD EPYC 7713 CPU, CUDA Toolkit 12.9.86, and gcc 11.5.0
 - NVIDIA GH200 Grace Hopper Superchip with CUDA Toolkit 12.9.86, and gcc 11.5.0
-- NVIDIA GeForce RTX 5080 GPU with an AMD Ryzen 9 7950X CPU, CUDA Toolkit 12.9.86, and gcc 11.5.0
+<!-- - NVIDIA GeForce RTX 5080 GPU with an AMD Ryzen 9 7950X CPU, CUDA Toolkit 12.9.86, and gcc 11.5.0 -->
 - NVIDIA B200 GPU with an Intel Xeon Platinum 8570 CPU, CUDA Toolkit 12.8.93, and gcc 13.3.0
+- AMD Instinct MI300X GPU with an AMD EPYC 9534 CPU, HIP 6.4.43484-123eb5128, and clang 19.0.0git
 
 ### Accuracy
 
-![accuracy_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_df_accuracy.png)
-_Accuracy of DGEMM (top) and SGEMM (bottom) emulation for $m=n=1024$ on GH200. Solid lines represent results for $k=1024$, and dashed lines for $k=16384$._
+![accuracy_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_ds_accuracy.png)
+_Accuracy of DGEMM (top) and SGEMM (bottom) emulation for $m=n=1024$. Solid lines represent results for $k=1024$, and dashed lines for $k=16384$._
 
 ### Throughput performance
 
-![throughput_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_d_time.png)
-_Throughput performance of DGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
+![throughput_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_d_time.png)
+_Throughput performance of DGEMM emulation._
 
-![throughput_sgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_f_time.png)
-_Throughput performance of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
+![throughput_sgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_s_time.png)
+_Throughput performance of SGEMM emulation._
 
 ### Power efficiency
 
-![power_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_d_watt.png)
-_Power efficiency of DGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
+![power_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_d_watt.png)
+_Power efficiency of DGEMM emulation._
 
-![power_sgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_02/fig/oz2_results_f_watt.png)
-_Power efficiency of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080 (bottom)._
-
-### Supplementary Experiment on a B200
-
-- $m=n=k=16384$
-- DGEMM:
-  - Native DGEMM: 36.0 TFLOPS
-  - Emulation (Fast Mode, 14-17 moduli): 98.9-123 TFLOPS
-  - Emulation (Accurate Mode, 14-17 moduli): 92.5-110 TFLOPS
-- SGEMM:
-  - Native SGEMM: 67.2 TFLOPS
-  - Emulation (Fast Mode, 7-9 moduli): 197--259 TFLOPS
-  - Emulation (Accurate Mode, 6-8 moduli): 194--240 TFLOPS
+![power_sgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_s_watt.png)
+_Power efficiency of SGEMM emulation._
 
 ## Acknowledgment
 
@@ -556,7 +544,26 @@ _Power efficiency of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080
 
 ## Citations
 
+```bibtex
+@inproceedings{10.1145/3731599.3767539,
+    author = {Uchino, Yuki and Ozaki, Katsuhisa and Imamura, Toshiyuki},
+    title = {High-Performance and Power-Efficient Emulation of Matrix Multiplication using INT8 Matrix Engines},
+    year = {2025},
+    isbn = {9798400718717},
+    publisher = {Association for Computing Machinery},
+    address = {New York, NY, USA},
+    url = {https://doi.org/10.1145/3731599.3767539},
+    doi = {10.1145/3731599.3767539},
+    booktitle = {Proceedings of the SC '25 Workshops of the International Conference for High Performance Computing, Networking, Storage and Analysis},
+    pages = {1824-1831},
+    numpages = {8},
+    series = {SC Workshops '25}
+}
 ```
+
+and
+
+```bibtex
 @misc{ozaki2025ozakischemeiigemmoriented,
       title={Ozaki Scheme II: A GEMM-oriented emulation of floating-point matrix multiplication using an integer modular technique},
       author={Katsuhisa Ozaki and Yuki Uchino and Toshiyuki Imamura},
@@ -566,20 +573,6 @@ _Power efficiency of SGEMM emulation on A100 (top), GH200 (middle), and RTX 5080
       primaryClass={cs.MS},
       url={https://arxiv.org/abs/2504.08009},
 }
-
-@misc{uchino2025highperformancepowerefficientemulationmatrix,
-      title={High-Performance and Power-Efficient Emulation of Matrix Multiplication using INT8 Matrix Engines},
-      author={Yuki Uchino and Katsuhisa Ozaki and Toshiyuki Imamura},
-      year={2025},
-      eprint={2508.03984},
-      archivePrefix={arXiv},
-      primaryClass={cs.DC},
-      url={https://arxiv.org/abs/2508.03984},
-}
-
-and
-
-TBD
 ```
 
 ## License

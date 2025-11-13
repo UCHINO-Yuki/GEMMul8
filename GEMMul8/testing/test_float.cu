@@ -180,6 +180,7 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             //--------------------
             // C := A*B by FP32 with CUBLAS_COMPUTE_32F_FAST_TF32
             //--------------------
+#if defined(__NVCC__)
             cudaDeviceSynchronize();
             cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
             cudaDeviceSynchronize();
@@ -195,6 +196,7 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             }
             outFile << std::endl;
             std::cout << std::endl;
+#endif
 
             //--------------------
             // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
@@ -452,6 +454,7 @@ void time_check(std::string &deviceName, std::string &dateTime) {
         //--------------------
         // C := A*B by FP32 with CUBLAS_COMPUTE_32F_FAST_TF32
         //--------------------
+#if defined(__NVCC__)
         cudaDeviceSynchronize();
         cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
         cudaDeviceSynchronize();
@@ -476,6 +479,7 @@ void time_check(std::string &deviceName, std::string &dateTime) {
         std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
         std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                   << "," << "," << "," << "," << std::endl;
+#endif
 
         //--------------------
         // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
@@ -790,6 +794,7 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
         //--------------------
         // C := A*B by FP32 with CUBLAS_COMPUTE_32F_FAST_TF32
         //--------------------
+#if defined(__NVCC__)
         res = getWatt::getWatt(
             [&]() {
                 cublasGemmEx(handle,
@@ -824,6 +829,7 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
         outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
         std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
         std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+#endif
 
         //--------------------
         // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
@@ -1115,6 +1121,7 @@ void time_check_rect(std::string &deviceName, std::string &dateTime) {
             //--------------------
             // C := A*B by FP32 with CUBLAS_COMPUTE_32F_FAST_TF32
             //--------------------
+#if defined(__NVCC__)
             cudaDeviceSynchronize();
             cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alphaf, devAf, CUDA_R_32F, m, devBf, CUDA_R_32F, k, &betaf, devCf, CUDA_R_32F, m, CUBLAS_COMPUTE_32F_FAST_TF32, CUBLAS_GEMM_DEFAULT);
             cudaDeviceSynchronize();
@@ -1139,6 +1146,7 @@ void time_check_rect(std::string &deviceName, std::string &dateTime) {
             std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
             std::cout << maxerr << "," << mederr << "," << 2.0 * m * n * k / time * 1.e-12 << "," << time << ","
                       << "," << "," << "," << "," << std::endl;
+#endif
 
             //--------------------
             // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
@@ -1455,6 +1463,7 @@ void watt_check_rect(std::string &deviceName, std::string &dateTime) {
             //--------------------
             // C := A*B by FP32 with CUBLAS_COMPUTE_32F_FAST_TF32
             //--------------------
+#if defined(__NVCC__)
             res = getWatt::getWatt(
                 [&]() {
                     cublasGemmEx(handle,
@@ -1489,6 +1498,7 @@ void watt_check_rect(std::string &deviceName, std::string &dateTime) {
             outFile << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << "SGEMM-TF32" << ",";
             std::cout << maxerr << "," << mederr << "," << res[0] << "," << res[1] * 1.e-9 << "," << std::endl;
+#endif
 
             //--------------------
             // C := A*B by FP32 with CUBLAS_COMPUTE_32F_EMULATED_16BFX9
