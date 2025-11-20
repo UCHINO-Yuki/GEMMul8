@@ -133,6 +133,26 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             outFile << std::endl;
             std::cout << std::endl;
 
+#if defined(__NVCC__)
+            cudaDeviceSynchronize();
+            cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                          &alpha, devA, m, devB, k,
+                          &beta, devC, m);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuC, devC, m * n * sizeof(double2), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuC, cpuC1, cpuC2, errmax, errmed);
+
+            outFile << phi << ",ZGEMM3m (k=" + std::to_string(k) + "),";
+            std::cout << phi << ",ZGEMM3m (k=" + std::to_string(k) + "),";
+            for (int i = 0; i < num_moduli_list.size(); ++i) {
+                outFile << errmax << ",";
+                std::cout << errmax << ",";
+            }
+            outFile << std::endl;
+            std::cout << std::endl;
+#endif
+
             //--------------------
             // C := A*B by ozaki-scheme2
             //--------------------
@@ -321,6 +341,37 @@ void time_check(std::string &deviceName, std::string &dateTime) {
         std::cout << phi << "," << m << "," << n << "," << k << "," << "ZGEMM" << ",";
         std::cout << maxerr << "," << mederr << "," << 8.0 * m * n * k / time * 1.e-12 << "," << time << ","
                   << "," << "," << "," << "," << std::endl;
+
+#if defined(__NVCC__)
+        cudaDeviceSynchronize();
+        cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                      &alpha, devA, m, devB, k,
+                      &beta, devC, m);
+        cudaDeviceSynchronize();
+        cudaMemcpy(cpuC, devC, m * n * sizeof(double2), cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();
+        eval::err::gemm_err(m, n, cpuC, cpuC1, cpuC2, maxerr, mederr);
+
+        time = 0.0;
+        for (int iter = 0; iter < itermax; ++iter) {
+            cudaDeviceSynchronize();
+            start = std::chrono::system_clock::now();
+            cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                          &alpha, devA, m, devB, k,
+                          &beta, devC, m);
+            cudaDeviceSynchronize();
+            stop = std::chrono::system_clock::now();
+            time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+        }
+        time = time / itermax * 1.e-9;
+
+        outFile << phi << "," << m << "," << n << "," << k << "," << "ZGEMM3m" << ",";
+        outFile << maxerr << "," << mederr << "," << 8.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                << "," << "," << "," << "," << std::endl;
+        std::cout << phi << "," << m << "," << n << "," << k << "," << "ZGEMM3m" << ",";
+        std::cout << maxerr << "," << mederr << "," << 8.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                  << "," << "," << "," << "," << std::endl;
+#endif
 
         //--------------------
         // C := A*B by ozaki-scheme2
@@ -552,6 +603,28 @@ void watt_check(std::string &deviceName, std::string &dateTime) {
         std::cout << phi << "," << m << "," << n << "," << k << "," << "ZGEMM" << ",";
         std::cout << maxerr << "," << mederr << "," << res[0] << "," << 4.0 * res[1] * 1.e-9 << "," << std::endl;
 
+#if defined(__NVCC__)
+        cudaDeviceSynchronize();
+        res = getWatt::getWatt(
+            [&]() {
+                cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                              &alpha, devA, m, devB, k,
+                              &beta, devC, m);
+            },
+            m,
+            n,
+            k);
+        cudaDeviceSynchronize();
+        cudaMemcpy(cpuC, devC, m * n * sizeof(double2), cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();
+        eval::err::gemm_err(m, n, cpuC, cpuC1, cpuC2, maxerr, mederr);
+
+        outFile << phi << "," << m << "," << n << "," << k << "," << "ZGEMM3m" << ",";
+        outFile << maxerr << "," << mederr << "," << res[0] << "," << 4.0 * res[1] * 1.e-9 << "," << std::endl;
+        std::cout << phi << "," << m << "," << n << "," << k << "," << "ZGEMM3m" << ",";
+        std::cout << maxerr << "," << mederr << "," << res[0] << "," << 4.0 * res[1] * 1.e-9 << "," << std::endl;
+#endif
+
         //--------------------
         // C := A*B by ozaki-scheme2
         //--------------------
@@ -752,6 +825,37 @@ void time_check_rect(std::string &deviceName, std::string &dateTime) {
             std::cout << phi << "," << m << "," << n << "," << k << "," << "ZGEMM" << ",";
             std::cout << maxerr << "," << mederr << "," << 8.0 * m * n * k / time * 1.e-12 << "," << time << ","
                       << "," << "," << "," << "," << std::endl;
+
+#if defined(__NVCC__)
+            cudaDeviceSynchronize();
+            cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                          &alpha, devA, m, devB, k,
+                          &beta, devC, m);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuC, devC, m * n * sizeof(double2), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuC, cpuC1, cpuC2, maxerr, mederr);
+
+            time = 0.0;
+            for (int iter = 0; iter < itermax; ++iter) {
+                cudaDeviceSynchronize();
+                start = std::chrono::system_clock::now();
+                cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                              &alpha, devA, m, devB, k,
+                              &beta, devC, m);
+                cudaDeviceSynchronize();
+                stop = std::chrono::system_clock::now();
+                time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+            }
+            time = time / itermax * 1.e-9;
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "ZGEMM3m" << ",";
+            outFile << maxerr << "," << mederr << "," << 8.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                    << "," << "," << "," << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "ZGEMM3m" << ",";
+            std::cout << maxerr << "," << mederr << "," << 8.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                      << "," << "," << "," << "," << std::endl;
+#endif
 
             //--------------------
             // C := A*B by ozaki-scheme2
@@ -984,6 +1088,28 @@ void watt_check_rect(std::string &deviceName, std::string &dateTime) {
             outFile << maxerr << "," << mederr << "," << res[0] << "," << 4.0 * res[1] * 1.e-9 << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << "ZGEMM" << ",";
             std::cout << maxerr << "," << mederr << "," << res[0] << "," << 4.0 * res[1] * 1.e-9 << "," << std::endl;
+
+#if defined(__NVCC__)
+            cudaDeviceSynchronize();
+            res = getWatt::getWatt(
+                [&]() {
+                    cublasZgemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                                  &alpha, devA, m, devB, k,
+                                  &beta, devC, m);
+                },
+                m,
+                n,
+                k);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuC, devC, m * n * sizeof(double2), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuC, cpuC1, cpuC2, maxerr, mederr);
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "ZGEMM3m" << ",";
+            outFile << maxerr << "," << mederr << "," << res[0] << "," << 4.0 * res[1] * 1.e-9 << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "ZGEMM3m" << ",";
+            std::cout << maxerr << "," << mederr << "," << res[0] << "," << 4.0 * res[1] * 1.e-9 << "," << std::endl;
+#endif
 
             //--------------------
             // C := A*B by ozaki-scheme2

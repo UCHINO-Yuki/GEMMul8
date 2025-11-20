@@ -1,8 +1,8 @@
 #include "gemmul8.hpp"
-#include "matrixmarketio.hpp"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <dlfcn.h>
+#include <iostream>
 
 #define CHECK_CUDA(call)                                               \
     do {                                                               \
