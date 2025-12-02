@@ -342,13 +342,26 @@ __inline__ void scaling(
     // C32i := A8i^T*B8i
     constexpr int32_t alpha = 1;
     constexpr int32_t beta  = 0;
-    cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
-                 ldc32i, n, lda8i,
-                 &alpha,
-                 A8i_high, CUDA_R_8I, lda8i, B8i_high, CUDA_R_8I, ldb8i,
-                 &beta,
-                 C32i, CUDA_R_32I, ldc32i,
-                 CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+    int blk    = 8192;
+    int rem    = n;
+    int offset = 0;
+
+    while (rem > 0) {
+        size_t nn = (rem <= 12288) ? rem : blk;
+
+        cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
+                     ldc32i, nn, lda8i,
+                     &alpha,
+                     A8i_high, CUDA_R_8I, lda8i,
+                     B8i_high + offset * ldb8i, CUDA_R_8I, ldb8i,
+                     &beta,
+                     C32i + offset * ldc32i, CUDA_R_32I, ldc32i,
+                     CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+        offset += nn;
+        rem -= nn;
+    }
 
     const float log2P = table::accu::log2P[table_idx]; // fld(log2(P-1)/2 - 0.5)
 

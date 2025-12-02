@@ -397,32 +397,46 @@ __inline__ void scaling(
     // Im(A)*Re(B)
     constexpr int32_t one  = 1;
     constexpr int32_t zero = 0;
-    cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
-                 ldc32i, n, lda8i,
-                 &one,
-                 A8i_high[0], CUDA_R_8I, lda8i,
-                 B8i_high[1], CUDA_R_8I, ldb8i,
-                 &zero,
-                 C32i[1], CUDA_R_32I, ldc32i,
-                 CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
 
-    // Im(A)*Re(B) + Re(A)*Im(B)
-    cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, ldc32i, n, lda8i,
-                 &one,
-                 A8i_high[1], CUDA_R_8I, lda8i,
-                 B8i_high[0], CUDA_R_8I, ldb8i,
-                 &one,
-                 C32i[1], CUDA_R_32I, ldc32i,
-                 CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+    int blk    = 8192;
+    int rem    = n;
+    int offset = 0;
 
-    // (Re(A)-Im(A)) * (Re(B)-Im(B))
-    cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, ldc32i, n, lda8i,
-                 &one,
-                 A8i_high[2], CUDA_R_8I, lda8i,
-                 B8i_high[2], CUDA_R_8I, ldb8i,
-                 &zero,
-                 C32i[0], CUDA_R_32I, ldc32i,
-                 CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+    while (rem > 0) {
+        size_t nn = (rem <= 12288) ? rem : blk;
+
+        cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
+                     ldc32i, nn, lda8i,
+                     &one,
+                     A8i_high[0], CUDA_R_8I, lda8i,
+                     B8i_high[1] + offset * ldb8i, CUDA_R_8I, ldb8i,
+                     &zero,
+                     C32i[1] + offset * ldc32i, CUDA_R_32I, ldc32i,
+                     CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+        // Im(A)*Re(B) + Re(A)*Im(B)
+        cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
+                     ldc32i, nn, lda8i,
+                     &one,
+                     A8i_high[1], CUDA_R_8I, lda8i,
+                     B8i_high[0] + offset * ldb8i, CUDA_R_8I, ldb8i,
+                     &one,
+                     C32i[1] + offset * ldc32i, CUDA_R_32I, ldc32i,
+                     CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+        // (Re(A)-Im(A)) * (Re(B)-Im(B))
+        cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
+                     ldc32i, nn, lda8i,
+                     &one,
+                     A8i_high[2], CUDA_R_8I, lda8i,
+                     B8i_high[2] + offset * ldb8i, CUDA_R_8I, ldb8i,
+                     &zero,
+                     C32i[0] + offset * ldc32i, CUDA_R_32I, ldc32i,
+                     CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+        offset += nn;
+        rem -= nn;
+    }
 
     const float log2P = table::accu::log2P[table_idx]; // fld(log2(P-1)/2 - 0.5)
 

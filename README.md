@@ -27,10 +27,6 @@ It is based on the Ozaki Scheme II, enabling bit-wise reproducible results with 
     - [Configure emulation parameters via environment variables](#configure-emulation-parameters-via-environment-variables)
     - [How to change environment variables programmatically](#how-to-change-environment-variables-programmatically)
 - [Numerical results](#numerical-results)
-  - [Environments](#environments)
-  - [Accuracy](#accuracy)
-  - [Throughput performance](#throughput-performance)
-  - [Power efficiency](#power-efficiency)
 - [Acknowledgment](#acknowledgment)
   - [Assistance with debugging](#assistance-with-debugging)
   - [Assistance with experiments on a B200 GPU](#assistance-with-experiments-on-a-b200-gpu)
@@ -475,39 +471,7 @@ cublasDgemm_v2(...);
 
 ## Numerical results
 
-The constant $\phi$ controls the difficulty of matrix multiplication (exponent distribution of input matrices).
-The difficulty of $\phi = 0.5$ is comparable to that of matrix multiplication in HPL.
-
-See all numerical results in the separate repository: [GEMMul8_numerical_results](https://github.com/UCHINO-Yuki/GEMMul8_numerical_results)
-
-### Environments
-
-- NVIDIA A100 SXM4 GPU with an AMD EPYC 7713 CPU, CUDA Toolkit 12.9.86, and gcc 11.5.0
-- NVIDIA GH200 Grace Hopper Superchip with CUDA Toolkit 12.9.86, and gcc 11.5.0
-<!-- - NVIDIA GeForce RTX 5080 GPU with an AMD Ryzen 9 7950X CPU, CUDA Toolkit 12.9.86, and gcc 11.5.0 -->
-- NVIDIA B200 GPU with an Intel Xeon Platinum 8570 CPU, CUDA Toolkit 12.8.93, and gcc 13.3.0
-- AMD Instinct MI300X GPU with an AMD EPYC 9534 CPU, HIP 6.4.43484-123eb5128, and clang 19.0.0git
-
-### Accuracy
-
-![accuracy_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_ds_accuracy.png)
-_Accuracy of DGEMM (top) and SGEMM (bottom) emulation for $m=n=1024$. Solid lines represent results for $k=1024$, and dashed lines for $k=16384$._
-
-### Throughput performance
-
-![throughput_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_d_time.png)
-_Throughput performance of DGEMM emulation._
-
-![throughput_sgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_s_time.png)
-_Throughput performance of SGEMM emulation._
-
-### Power efficiency
-
-![power_dgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_d_watt.png)
-_Power efficiency of DGEMM emulation._
-
-![power_sgemm](https://raw.githubusercontent.com/UCHINO-Yuki/GEMMul8_numerical_results/main/results_04/fig/oz2_results_s_watt.png)
-_Power efficiency of SGEMM emulation._
+See numerical results in the separate repository: [GEMMul8_numerical_results](https://github.com/UCHINO-Yuki/GEMMul8_numerical_results)
 
 ## Acknowledgment
 

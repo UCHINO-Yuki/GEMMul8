@@ -161,14 +161,26 @@ template <typename T> __inline__ std::vector<double> gemm(
         // Error-free matrix multiplication
         // C32i := A8i*B8i
         //------------------------------
-        cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
-                     ldc32i, n, lda8i,
-                     &one,
-                     A8i + i * sizeA, CUDA_R_8I, lda8i,
-                     B8i + i * sizeB, CUDA_R_8I, ldb8i,
-                     &zero,
-                     C32i, CUDA_R_32I, ldc32i,
-                     CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+        int blk    = 8192;
+        int rem    = n;
+        int offset = 0;
+
+        while (rem > 0) {
+            size_t nn = (rem <= 12288) ? rem : blk;
+
+            cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
+                         ldc32i, nn, lda8i,
+                         &one,
+                         A8i + i * sizeA, CUDA_R_8I, lda8i,
+                         B8i + i * sizeB + offset * ldb8i, CUDA_R_8I, ldb8i,
+                         &zero,
+                         C32i + offset * ldc32i, CUDA_R_32I, ldc32i,
+                         CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+            offset += nn;
+            rem -= nn;
+        }
         timing(time_stamp, timer[1]);
 
         //------------------------------
