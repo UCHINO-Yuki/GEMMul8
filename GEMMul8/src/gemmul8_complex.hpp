@@ -15,8 +15,8 @@ __inline__ size_t workSize(
     const unsigned num_moduli,
     const bool enable_skip_scalA,
     const bool enable_skip_scalB,
-    size_t *const workSizeA,
-    size_t *const workSizeB //
+    size_t *workSizeA,
+    size_t *workSizeB //
 ) {
     const size_t lda8i     = padding(k);
     const size_t cola8i    = padding(m);

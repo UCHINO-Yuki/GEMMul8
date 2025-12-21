@@ -384,31 +384,58 @@ template <> __forceinline__ __device__ cuFloatComplex T2int_fp<cuFloatComplex>(c
 // Return int8_t(ceil(scalbn(fabs(in),sft)))
 //------------------------------
 template <typename T> __forceinline__ __device__ int8x2_t<T> T2int_8i(T in, const int sft) {
-    int_t<T> bits_full   = __fp_as_int<T>(in);
-    int exp_biased       = (int)extract_exp<T>(bits_full);
-    int_t<T> significand = extract_significand<T>(bits_full);
-    int_t<T> result;
+    using I = int_t<T>;
 
-    if (exp_biased != 0) {
-        significand |= (Tconst<int_t<T>>::one() << fp<T>::prec);
-        int shift_amount = (fp<T>::bias + fp<T>::prec) - exp_biased - sft;
+    // fabs (sign clear)
+    I bits = __fp_as_int<T>(in);
+    bits &= ~extract_sign<T>(bits);
 
-        int_t<T> divisor = Tconst<int_t<T>>::one() << shift_amount;
-        result           = (significand + divisor - 1) >> shift_amount;
-        return static_cast<int8_t>(result);
+    // zero
+    if (bits == 0) {
+        return int8_t(0);
     }
 
-    if (significand == 0) {
-        return Tconst<int8_t>::zero();
+    // exp / frac
+    int exp = (int)extract_exp<T>(bits);
+    I frac  = extract_significand<T>(bits);
+
+    // mantissa + unbiased exponent
+    I mant;
+    int e;
+
+    if (exp) {
+        // normal
+        mant = frac | (I(1) << fp<T>::prec);
+        e    = exp - fp<T>::bias;
+    } else {
+        // subnormal (only place using clz)
+        int k = countlz<T>(frac) - (fp<T>::bits - fp<T>::prec);
+        mant  = (frac << k) | (I(1) << fp<T>::prec);
+        e     = (1 - fp<T>::bias) - k;
     }
 
-    int lz = (fp<T>::bits - fp<T>::prec) - countlz<T>(significand);
-    significand <<= (2 - lz);
-    int shift_amount = (fp<T>::bias + fp<T>::prec) - lz - sft;
+    // apply scalbn
+    e += sft;
 
-    int_t<T> divisor = Tconst<int_t<T>>::one() << shift_amount;
-    result           = (significand + divisor - 1) >> shift_amount;
-    return static_cast<int8_t>(result);
+    // integer exponent alignment
+    int shift = fp<T>::prec - e;
+
+    // integer result (no rounding needed)
+    if (shift <= 0) {
+        return static_cast<int8_t>(mant << (-shift));
+    }
+
+    // small values
+    if (shift >= fp<T>::prec + 1) {
+        return int8_t(1);
+    }
+
+    // compute ceil
+    I mask     = (I(1) << shift) - 1;
+    I floor    = mant >> shift;
+    I has_frac = (mant & mask) != 0;
+
+    return static_cast<int8_t>(floor + has_frac);
 };
 template <> __forceinline__ __device__ char2 T2int_8i<cuDoubleComplex>(cuDoubleComplex in, const int sft) {
     char2 out;

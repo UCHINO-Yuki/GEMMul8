@@ -32,7 +32,7 @@ template <> size_t workSize<true>(
     const size_t m, const size_t n, const size_t k,
     const unsigned num_moduli,
     const bool enable_skip_scalA, const bool enable_skip_scalB,
-    size_t *const workSizeA, size_t *const workSizeB //
+    size_t *workSizeA, size_t *workSizeB //
 ) {
     return oz2::complex::workSize(m, n, k, num_moduli, enable_skip_scalA, enable_skip_scalB, workSizeA, workSizeB);
 }
@@ -41,7 +41,7 @@ template <> size_t workSize<false>(
     const size_t m, const size_t n, const size_t k,
     const unsigned num_moduli,
     const bool enable_skip_scalA, const bool enable_skip_scalB,
-    size_t *const workSizeA, size_t *const workSizeB //
+    size_t *workSizeA, size_t *workSizeB //
 ) {
     return oz2::real::workSize(m, n, k, num_moduli, enable_skip_scalA, enable_skip_scalB, workSizeA, workSizeB);
 }
