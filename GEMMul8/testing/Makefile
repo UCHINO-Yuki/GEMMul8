@@ -64,7 +64,7 @@ export LD_LIBRARY_PATH := $(CUDA_PATH)/lib64:$(LD_LIBRARY_PATH)
 COMPILER := nvcc
 LIBS := -lcublas -lcudart -lcuda -lnvidia-ml -ldl ../lib/libgemmul8.a
 FLAGS := -std=c++20 -O3 -I../include
-FLAGS := -DGPU_MEM_MB=$(GPU_MEM_MB)
+FLAGS += -DGPU_MEM_MB=$(GPU_MEM_MB)
 ARCH := -gencode arch=compute_$(GPU_ARCH),code=sm_$(GPU_ARCH)
 
 # external library

@@ -567,4 +567,46 @@ void gemm_err(const size_t m,
 
 } // namespace err
 
+void data_analysis(const size_t m,
+                   const size_t n,
+                   cuDoubleComplex *A,
+                   double &maxA,
+                   double &minA,
+                   double &medA,       //
+                   double &quartile1A, //
+                   double &quartile3A  //
+) {
+    size_t sizeD = m * n * 2;
+    double *D    = reinterpret_cast<double *>(A);
+    std::sort(D, D + sizeD, [](double a, double b) {
+        return std::abs(a) < std::abs(b);
+    });
+    maxA       = std::abs(D[sizeD - 1]);
+    medA       = std::abs(D[sizeD / 2]);
+    minA       = std::abs(D[0]);
+    quartile1A = std::abs(D[sizeD / 4]);
+    quartile3A = std::abs(D[sizeD * 3 / 4]);
+}
+
+void data_analysis(const size_t m,
+                   const size_t n,
+                   double *A,
+                   double &maxA,
+                   double &minA,
+                   double &medA,       //
+                   double &quartile1A, //
+                   double &quartile3A  //
+) {
+    size_t sizeD = m * n;
+    double *D    = A;
+    std::sort(D, D + sizeD, [](double a, double b) {
+        return std::abs(a) < std::abs(b);
+    });
+    maxA       = std::abs(D[sizeD - 1]);
+    medA       = std::abs(D[sizeD / 2]);
+    minA       = std::abs(D[0]);
+    quartile1A = std::abs(D[sizeD / 4]);
+    quartile3A = std::abs(D[sizeD * 3 / 4]);
+}
+
 } // namespace eval

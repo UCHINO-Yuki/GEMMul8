@@ -21,6 +21,10 @@
     #define SIZE 1024, 2048, 4096, 8192
 #endif
 
+#if CUBLAS_VER_MAJOR > 13 || (CUBLAS_VER_MAJOR == 13 && CUBLAS_VER_MINOR >= 1) || (CUBLAS_VER_MAJOR == 13 && CUBLAS_VER_PATCH >= 2)
+    #define CUBLAS_VERSION_1300u2
+#endif
+
 std::string getDeviceName() {
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0);
@@ -42,6 +46,42 @@ std::string getCurrentDateTime(std::chrono::system_clock::time_point &now) {
     ss << std::put_time(std::localtime(&now_time), "%Y-%m-%d_%H-%M-%S");
     return ss.str();
 }
+
+#if defined(CUBLAS_VERSION_1300u2)
+static inline int ceildiv(int a, int b) {
+    return (a + b - 1) / b;
+}
+
+size_t getFixedPointWorkspaceSizeInBytes(int m, int n, int k, int batchCount, bool isComplex,
+                                         cudaEmulationMantissaControl mantissaControl, int maxMantissaBitCount) {
+
+    constexpr double MULTIPLIER = 1.25;
+
+    int mult      = isComplex ? 2 : 1;
+    int numSlices = ceildiv(maxMantissaBitCount + 1, 8);
+
+    int padded_m     = ceildiv(m, 1024) * 1024;
+    int padded_n     = ceildiv(n, 1024) * 1024;
+    int padded_k     = ceildiv(k, 128) * 128;
+    int num_blocks_k = ceildiv(k, 64);
+
+    size_t gemm_workspace = sizeof(int8_t) *
+                            ((size_t)padded_m * padded_k + (size_t)padded_n * padded_k) * mult * numSlices;
+
+    gemm_workspace += sizeof(int32_t) * ((size_t)padded_m + padded_n) * mult;
+    if (isComplex) {
+        gemm_workspace += sizeof(double) * (size_t)m * n * mult * mult;
+    }
+
+    size_t adp_workspace = 0;
+    if (mantissaControl == CUDA_EMULATION_MANTISSA_CONTROL_DYNAMIC) {
+        adp_workspace = sizeof(int32_t) * ((size_t)m * num_blocks_k + (size_t)n * num_blocks_k + (size_t)m * n) * mult;
+    }
+
+    constexpr size_t CONSTANT_SIZE = 128 * 1024 * 1024;
+    return (size_t)(std::max(gemm_workspace, adp_workspace) * batchCount * MULTIPLIER) + CONSTANT_SIZE;
+}
+#endif
 
 void accuracy_check(std::string &deviceName, std::string &dateTime) {
     std::string fileName = "oz2_results_z_accuracy_" + deviceName + "_" + dateTime + ".csv";
@@ -73,6 +113,23 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
     cudaDeviceSynchronize();
     void *work_gemm;
     cudaMalloc(&work_gemm, worksize);
+
+#if defined(CUBLAS_VERSION_1300u2)
+    cublasHandle_t handle_ozaki1;
+    cublasCreate(&handle_ozaki1);
+    cudaStream_t stream = NULL;
+    cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
+    cublasSetStream(handle_ozaki1, stream);
+    cudaEmulationMantissaControl_t mControl = CUDA_EMULATION_MANTISSA_CONTROL_FIXED;
+    size_t workspaceSizeInBytes             = getFixedPointWorkspaceSizeInBytes(m, n, k_max, 1, true, mControl, 79);
+    void *workspace;
+    cudaMalloc(reinterpret_cast<void **>(&workspace), workspaceSizeInBytes);
+    cublasSetWorkspace(handle_ozaki1, workspace, workspaceSizeInBytes);
+    cublasSetMathMode(handle_ozaki1, CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH);
+    cublasSetEmulationStrategy(handle_ozaki1, CUBLAS_EMULATION_STRATEGY_EAGER);
+    cublasSetFixedPointEmulationMantissaControl(handle_ozaki1, mControl);
+#endif
+
     cudaDeviceSynchronize();
 
     outFile << "phi,function,";
@@ -171,6 +228,29 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             std::cout << std::endl;
 #endif
 
+#if defined(CUBLAS_VERSION_1300u2)
+            for (int mantissaBitCount = 55; mantissaBitCount < 80; mantissaBitCount += 8) {
+                cublasSetFixedPointEmulationMaxMantissaBitCount(handle_ozaki1, mantissaBitCount);
+                cudaDeviceSynchronize();
+                cublasZgemm(handle_ozaki1, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                            &alpha, devA, m, devB, k,
+                            &beta, devC, m);
+                cudaDeviceSynchronize();
+                cudaMemcpy(cpuC, devC, m * n * sizeof(double2), cudaMemcpyDeviceToHost);
+                cudaDeviceSynchronize();
+                eval::err::gemm_err(m, n, cpuC, cpuC1, cpuC2, errmax, errmed);
+
+                outFile << phi << ",OS1-" + std::to_string((mantissaBitCount + 1) / 8) + " (k=" + std::to_string(k) + "),";
+                std::cout << phi << ",OS1-" + std::to_string((mantissaBitCount + 1) / 8) + " (k=" + std::to_string(k) + "),";
+                for (int i = 0; i < num_moduli_list.size(); ++i) {
+                    outFile << errmax << ",";
+                    std::cout << errmax << ",";
+                }
+                outFile << std::endl;
+                std::cout << std::endl;
+            }
+#endif
+
             //--------------------
             // C := A*B by ozaki-scheme2
             //--------------------
@@ -215,6 +295,9 @@ void accuracy_check(std::string &deviceName, std::string &dateTime) {
     cudaFree(work_gpu);
     cudaFree(work_gemm);
     cublasDestroy(handle);
+    cublasDestroy(handle_ozaki1);
+    cudaStreamDestroy(stream);
+    cudaDeviceReset();
     outFile.close();
 }
 
@@ -491,10 +574,10 @@ void time_check(std::string &deviceName, std::string &dateTime) {
         }
     }
 
-    delete[] work_cpu;
-    cudaFree(work_gpu);
     cudaFree(work_gemm);
     cublasDestroy(handle);
+    delete[] work_cpu;
+    cudaFree(work_gpu);
     outFile.close();
 }
 
@@ -1286,16 +1369,218 @@ void watt_check_rect(std::string &deviceName, std::string &dateTime) {
     outFile.close();
 }
 
+void flops_ozaki1_check(std::string &deviceName, std::string &dateTime) {
+    std::string fileName = "oz2_results_z_time_ozaki1_" + deviceName + "_" + dateTime + ".csv";
+    std::ofstream outFile(fileName);
+    outFile << std::scientific;
+    std::cout << std::scientific;
+    outFile << "phi,m,n,k,"
+            << "function,"
+            << "relerr_max,relerr_med,"
+            << "TFLOPS,"
+            << "total_time [sec],"
+            << "conv_64f_2_8i,"
+            << "cublasGemmEx,"
+            << "conv_32i_2_8u,"
+            << "inverse_scaling,"
+            << std::endl;
+    std::cout << "phi,m,n,k,"
+              << "function,"
+              << "relerr_max,relerr_med,"
+              << "TFLOPS,"
+              << "total_time [sec],"
+              << "conv_64f_2_8i,"
+              << "cublasGemmEx,"
+              << "conv_32i_2_8u,"
+              << "inverse_scaling,"
+              << std::endl;
+    cublasHandle_t handle;
+    cublasCreate(&handle);
+
+    //--------------------
+    // settings
+    //--------------------
+    unsigned long long seed = SEED;
+    const double phi        = 0.5;
+    std::vector<size_t> n_list{SIZE};
+    std::vector<unsigned> num_moduli_list{NUM_MODULI};
+    const int itermax = AVERAGE;
+
+    //--------------------
+    // workspace
+    //--------------------
+    const size_t n_max          = *max_element(begin(n_list), end(n_list));
+    const size_t num_moduli_max = *max_element(begin(num_moduli_list), end(num_moduli_list));
+    double2 *work_cpu           = new double2[n_max * n_max * 3];
+    void *work_gpu;
+    cudaMalloc(&work_gpu, n_max * n_max * sizeof(double2) * 4);
+    cudaDeviceSynchronize();
+
+#if defined(CUBLAS_VERSION_1300u2)
+    cublasHandle_t handle_ozaki1;
+    cublasCreate(&handle_ozaki1);
+    cudaStream_t stream = NULL;
+    cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
+    cublasSetStream(handle_ozaki1, stream);
+    cudaEmulationMantissaControl_t mControl = CUDA_EMULATION_MANTISSA_CONTROL_FIXED;
+    size_t workspaceSizeInBytes             = getFixedPointWorkspaceSizeInBytes(n_max, n_max, n_max, 1, true, mControl, 79);
+    void *workspace;
+    cudaMalloc(reinterpret_cast<void **>(&workspace), workspaceSizeInBytes);
+    cublasSetWorkspace(handle_ozaki1, workspace, workspaceSizeInBytes);
+    cublasSetMathMode(handle_ozaki1, CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH);
+    cublasSetEmulationStrategy(handle_ozaki1, CUBLAS_EMULATION_STRATEGY_EAGER);
+    cublasSetFixedPointEmulationMantissaControl(handle_ozaki1, mControl);
+
+    cudaDeviceSynchronize();
+
+    for (auto &n : n_list) {
+        size_t m       = n;
+        size_t k       = n;
+        double2 *cpuC  = work_cpu;
+        double2 *cpuC1 = cpuC + m * n;
+        double2 *cpuC2 = cpuC1 + m * n;
+        double2 *devA  = reinterpret_cast<double2 *>(work_gpu);
+        double2 *devB  = devA + m * k;
+        double2 *devC  = devB + k * n;
+        double2 *devC1 = devC;
+        double2 *devC2 = devC1 + m * n;
+        double maxerr = 0.0, mederr = 0.0;
+        double time = 0.0;
+        std::chrono::system_clock::time_point start, stop;
+
+        //--------------------
+        // generate matrices
+        //--------------------
+        makemat::randmat(m, k, devA, phi, seed);
+        makemat::randmat(k, n, devB, phi, seed);
+
+        //--------------------
+        // C1+C2 := A*B (double-double arithmetic)
+        //--------------------
+        eval::dd_gpu::simple_gemm(m, n, k, devA, devB, devC1, devC2);
+        cudaDeviceSynchronize();
+        cudaMemcpy(cpuC1, devC1, m * n * sizeof(double2), cudaMemcpyDeviceToHost);
+        cudaMemcpy(cpuC2, devC2, m * n * sizeof(double2), cudaMemcpyDeviceToHost);
+
+        double2 alpha{1.0, 0.0};
+        double2 beta{0.0, 0.0};
+
+        for (int mantissaBitCount = 55; mantissaBitCount < 80; mantissaBitCount += 8) {
+            cublasSetFixedPointEmulationMaxMantissaBitCount(handle_ozaki1, mantissaBitCount);
+            cudaDeviceSynchronize();
+            cublasZgemm(handle_ozaki1, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                        &alpha, devA, m, devB, k,
+                        &beta, devC, m);
+            cudaDeviceSynchronize();
+            cudaMemcpy(cpuC, devC, m * n * sizeof(double2), cudaMemcpyDeviceToHost);
+            cudaDeviceSynchronize();
+            eval::err::gemm_err(m, n, cpuC, cpuC1, cpuC2, maxerr, mederr);
+
+            time = 0.0;
+            for (int iter = 0; iter < itermax; ++iter) {
+                cudaDeviceSynchronize();
+                start = std::chrono::system_clock::now();
+                cublasZgemm(handle_ozaki1, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k,
+                            &alpha, devA, m, devB, k,
+                            &beta, devC, m);
+                cudaDeviceSynchronize();
+                stop = std::chrono::system_clock::now();
+                time += std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+            }
+            time = time / itermax * 1.e-9;
+
+            outFile << phi << "," << m << "," << n << "," << k << "," << "OS1-" << std::to_string((mantissaBitCount + 1) / 8) << ",";
+            outFile << maxerr << "," << mederr << "," << 8.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                    << "," << "," << "," << "," << std::endl;
+            std::cout << phi << "," << m << "," << n << "," << k << "," << "OS1-" << std::to_string((mantissaBitCount + 1) / 8) << ",";
+            std::cout << maxerr << "," << mederr << "," << 8.0 * m * n * k / time * 1.e-12 << "," << time << ","
+                      << "," << "," << "," << "," << std::endl;
+        }
+    }
+#endif
+
+    delete[] work_cpu;
+    cudaFree(work_gpu);
+    cublasDestroy(handle_ozaki1);
+    cudaStreamDestroy(stream);
+    cudaDeviceReset();
+    outFile.close();
+}
+
+void exp_check(std::string &deviceName, std::string &dateTime) {
+    std::cout << std::scientific;
+
+    //--------------------
+    // settings
+    //--------------------
+    unsigned long long seed = SEED;
+    std::vector<double> phi_list{PHI};
+    std::vector<size_t> k_list{SIZE};
+    const size_t m = 1024;
+    const size_t n = 1024;
+
+    //--------------------
+    // workspace
+    //--------------------
+    const size_t k    = *max_element(begin(k_list), end(k_list));
+    double2 *work_cpu = new double2[m * k + k * n];
+    double2 *cpuA     = work_cpu;
+    double2 *cpuB     = cpuA + m * k;
+    void *work_gpu;
+    cudaMalloc(&work_gpu, (m * k + k * n) * sizeof(double2));
+    double2 *devA = reinterpret_cast<double2 *>(work_gpu);
+    double2 *devB = devA + m * k;
+
+    cudaDeviceSynchronize();
+    std::cout << "phi,m,n,k,maxA,minA,medianA,q1A,q3A,maxB,minB,medianB,q1B,q3B," << std::endl;
+
+    for (auto &phi : phi_list) {
+
+        //--------------------
+        // generate matrices
+        //--------------------
+        makemat::randmat(m, k, devA, phi, seed);
+        makemat::randmat(k, n, devB, phi, seed);
+        cudaDeviceSynchronize();
+        cudaMemcpy(cpuA, devA, m * k * sizeof(double2), cudaMemcpyDeviceToHost);
+        cudaMemcpy(cpuB, devB, k * n * sizeof(double2), cudaMemcpyDeviceToHost);
+
+        double maxA, minA, medA, q1A, q3A, maxB, minB, medB, q1B, q3B;
+        eval::data_analysis(m, k, cpuA, maxA, minA, medA, q1A, q3A);
+        eval::data_analysis(k, n, cpuB, maxB, minB, medB, q1B, q3B);
+        std::cout << phi << ","
+                  << m << ","
+                  << n << ","
+                  << k << ","
+                  << maxA << ","
+                  << minA << ","
+                  << medA << ","
+                  << q1A << ","
+                  << q3A << ","
+                  << maxB << ","
+                  << minB << ","
+                  << medB << ","
+                  << q1B << ","
+                  << q3B << ","
+                  << std::endl;
+    }
+
+    delete[] work_cpu;
+    cudaFree(work_gpu);
+}
+
 int main(int argc, char **argv) {
     std::chrono::system_clock::time_point start, stop;
     std::string deviceName = getDeviceName();
     std::string startTime  = getCurrentDateTime(start);
 
-    bool run_accuracy   = false;
-    bool run_flops      = false;
-    bool run_watt       = false;
-    bool run_flops_rect = false;
-    bool run_watt_rect  = false;
+    bool run_accuracy     = false;
+    bool run_flops        = false;
+    bool run_watt         = false;
+    bool run_flops_rect   = false;
+    bool run_watt_rect    = false;
+    bool run_flops_ozaki1 = false;
+    bool run_exp_check    = false;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "accuracy") {
@@ -1308,12 +1593,18 @@ int main(int argc, char **argv) {
             run_flops_rect = true;
         } else if (arg == "watt_rect") {
             run_watt_rect = true;
+        } else if (arg == "flops_ozaki1") {
+            run_flops_ozaki1 = true;
+        } else if (arg == "exp_check") {
+            run_exp_check = true;
         } else if (arg == "all") {
-            run_accuracy   = true;
-            run_flops      = true;
-            run_watt       = true;
-            run_flops_rect = true;
-            run_watt_rect  = true;
+            run_accuracy     = true;
+            run_flops        = true;
+            run_watt         = true;
+            run_flops_rect   = true;
+            run_watt_rect    = true;
+            run_flops_ozaki1 = true;
+            run_exp_check    = true;
         }
     }
 
@@ -1327,6 +1618,10 @@ int main(int argc, char **argv) {
         time_check_rect(deviceName, startTime);
     if (run_watt_rect)
         watt_check_rect(deviceName, startTime);
+    if (run_flops_ozaki1)
+        flops_ozaki1_check(deviceName, startTime);
+    if (run_exp_check)
+        exp_check(deviceName, startTime);
 
     std::string endTime = getCurrentDateTime(stop);
     auto sec            = std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count() * 1.e-9;
