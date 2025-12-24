@@ -1,5 +1,6 @@
 #pragma once
 #include "common.hpp"
+#include "conv_32i_2_8i_real.hpp"
 #include "template_math.hpp"
 
 namespace oz2 {
@@ -8,11 +9,11 @@ namespace real {
 //------------------------------
 // Accumulation, final reduction & Undo scaling
 //------------------------------
-template <typename TC, typename TP>
+template <typename TC, typename TP, typename TCtmp>
 __forceinline__ __device__ TC invscal_device(
     const unsigned num_moduli,            // number of moduli
-    const size_t incC8i,                  // increment
-    const int8_t *const __restrict__ C8i, // input
+    const size_t incCtmp,                 // increment
+    const TCtmp *const __restrict__ Ctmp, // input
     const TP P,                           // prod(moduli)
     const double invP,                    // 1/prod(moduli)
     const int16_t sft                     // exponent of shift values
@@ -20,11 +21,24 @@ __forceinline__ __device__ TC invscal_device(
     if constexpr (std::is_same_v<TP, double>) {
 
         // sum(qi*Pi*C8i[i])
-        double C64f = Tconst<double>::zero();
-        for (unsigned i = 0; i < num_moduli; ++i) {
-            double qPi   = table::qPi[i];
-            double C8i_d = static_cast<double>(C8i[i * incC8i]);
-            C64f         = fma(qPi, C8i_d, C64f);
+        double C64f = 0.0;
+        if constexpr (std::is_same_v<TCtmp, int8_t>) {
+            for (unsigned i = 0; i < num_moduli; ++i) {
+                double C8i_d = static_cast<double>(Ctmp[i * incCtmp]);
+                double qPi   = table::qPi[i];
+                C64f         = fma(qPi, C8i_d, C64f);
+            }
+        } else {
+            {
+                double C8i_d = conv_32i_2_8i_256_scal(Ctmp[0]);
+                double qPi   = table::qPi[0];
+                C64f         = qPi * C8i_d;
+            }
+            for (unsigned i = 1; i < num_moduli; ++i) {
+                double C8i_d = conv_32i_2_8i_not256_scal(Ctmp[i * incCtmp], i - 1);
+                double qPi   = table::qPi[i];
+                C64f         = fma(qPi, C8i_d, C64f);
+            }
         }
 
         double quot    = rint(invP * C64f);                          // round(C64f/P)
@@ -35,12 +49,27 @@ __forceinline__ __device__ TC invscal_device(
     } else if constexpr (std::is_same_v<TP, double2>) {
 
         // sum(qi*Pi*C8i[i])
-        double2 C64f = Tconst<double2>::zero();
-        for (unsigned i = 0; i < num_moduli; ++i) {
-            double2 qPi  = reinterpret_cast<double2 *>(table::qPi)[i];
-            double C8i_d = static_cast<double>(C8i[i * incC8i]);
-            C64f.x       = fma(qPi.x, C8i_d, C64f.x); // error-free
-            C64f.y       = fma(qPi.y, C8i_d, C64f.y); // non-error-free
+        double2 C64f{};
+        if constexpr (std::is_same_v<TCtmp, int8_t>) {
+            for (unsigned i = 0; i < num_moduli; ++i) {
+                double C8i_d = static_cast<double>(Ctmp[i * incCtmp]);
+                double2 qPi  = reinterpret_cast<double2 *>(table::qPi)[i];
+                C64f.x       = fma(qPi.x, C8i_d, C64f.x); // error-free
+                C64f.y       = fma(qPi.y, C8i_d, C64f.y); // non-error-free
+            }
+        } else {
+            {
+                double C8i_d = conv_32i_2_8i_256_scal(Ctmp[0]);
+                double2 qPi  = reinterpret_cast<double2 *>(table::qPi)[0];
+                C64f.x       = qPi.x * C8i_d; // error-free
+                C64f.y       = qPi.y * C8i_d; // non-error-free
+            }
+            for (unsigned i = 1; i < num_moduli; ++i) {
+                double C8i_d = conv_32i_2_8i_not256_scal(Ctmp[i * incCtmp], i - 1);
+                double2 qPi  = reinterpret_cast<double2 *>(table::qPi)[i];
+                C64f.x       = fma(qPi.x, C8i_d, C64f.x); // error-free
+                C64f.y       = fma(qPi.y, C8i_d, C64f.y); // non-error-free
+            }
         }
 
         double quot    = rint(invP * C64f.x);                             // round(C64f/P)
@@ -56,15 +85,15 @@ __forceinline__ __device__ TC invscal_device(
 //------------------------------
 // C := alpha*AB + beta*C
 //------------------------------
-template <typename TC, typename TP>
+template <typename TC, typename TP, typename TCtmp>
 __global__ void invscal_kernel_general(
     const TC alpha, const TC beta,          //
     const unsigned num_moduli,              // number of moduli
     const size_t m,                         // size(C64f,1)
     const size_t sizeC,                     // m*n
-    const size_t incC8i,                    // increment
-    const int8_t *const __restrict__ C8i,   // input
-    const size_t ldc8i,                     // leading dim of C8i
+    const size_t incCtmp,                   // increment
+    const TCtmp *const __restrict__ Ctmp,   // input
+    const size_t ldctmp,                    // leading dim of Ctmp
     TC *const __restrict__ C,               // output
     const size_t ldc,                       // leading dimension
     const TP P,                             // -prod(moduli)
@@ -76,8 +105,8 @@ __global__ void invscal_kernel_general(
     if (idx >= sizeC) return;
     const auto col     = idx / m;
     const auto row     = idx - col * m;
-    const auto mem_idx = col * ldc8i + row;
-    TC AB              = invscal_device<TC, TP>(num_moduli, incC8i, C8i + mem_idx, P, invP, sftA[row] + sftB[col]);
+    const auto mem_idx = col * ldctmp + row;
+    TC AB              = invscal_device<TC, TP, TCtmp>(num_moduli, incCtmp, Ctmp + mem_idx, P, invP, sftA[row] + sftB[col]);
 
     const auto idxC = col * ldc + row;
     C[idxC]         = Taxpby_scal<TC>(alpha, AB, beta, C[idxC]);
@@ -86,14 +115,14 @@ __global__ void invscal_kernel_general(
 //------------------------------
 // C := alpha*AB + beta*C
 //------------------------------
-template <typename TC, typename TP, int ALPHA, int BETA>
+template <typename TC, typename TP, typename TCtmp, int ALPHA, int BETA>
 __global__ void invscal_kernel_special(
     const unsigned num_moduli,              // number of moduli
     const size_t m,                         // size(C64f,1)
     const size_t sizeC,                     // m*n
-    const size_t incC8i,                    // increment
-    const int8_t *const __restrict__ C8i,   // input
-    const size_t ldc8i,                     // leading dim of C8i
+    const size_t incCtmp,                   // increment
+    const TCtmp *const __restrict__ Ctmp,   // input
+    const size_t ldctmp,                    // leading dim of Ctmp
     TC *const __restrict__ C,               // output
     const size_t ldc,                       // leading dimension
     const TP P,                             // -prod(moduli)
@@ -105,8 +134,8 @@ __global__ void invscal_kernel_special(
     if (idx >= sizeC) return;
     const auto col     = idx / m;
     const auto row     = idx - col * m;
-    const auto mem_idx = col * ldc8i + row;
-    TC AB              = invscal_device<TC, TP>(num_moduli, incC8i, C8i + mem_idx, P, invP, sftA[row] + sftB[col]);
+    const auto mem_idx = col * ldctmp + row;
+    TC AB              = invscal_device<TC, TP, TCtmp>(num_moduli, incCtmp, Ctmp + mem_idx, P, invP, sftA[row] + sftB[col]);
 
     const auto idxC = col * ldc + row;
     if constexpr (ALPHA == 1 && BETA == 0) {
@@ -130,14 +159,14 @@ __global__ void invscal_kernel_special(
 //------------------------------
 // Interface!!
 //------------------------------
-template <typename T>
+template <typename T, typename TCtmp = int8_t>
 __inline__ void inverse_scaling(
     const bool P_is_double,
     const unsigned num_moduli,      // number of moduli
     const size_t m, const size_t n, // size(C)
-    const int8_t *const C8i,        // input
-    const size_t ldc8i,             // leading dim of C8i
-    const size_t incC8i,            // increment
+    const TCtmp *const Ctmp,        // input
+    const size_t ldctmp,            // leading dim of Ctmp
+    const size_t incCtmp,           // increment
     T *const C,                     // output
     const size_t ldc,               // leading dimension
     const int16_t *const sftA,      // exponent of shift values for rows of A
@@ -153,44 +182,44 @@ __inline__ void inverse_scaling(
 
         if (alpha == Tconst<T>::one()) {
             if (beta == Tconst<T>::zero()) {
-                invscal_kernel_special<T, double, 1, 0><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+                invscal_kernel_special<T, double, TCtmp, 1, 0><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
                 return;
             } else if (beta == Tconst<T>::one()) {
-                invscal_kernel_special<T, double, 1, 1><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+                invscal_kernel_special<T, double, TCtmp, 1, 1><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
                 return;
             }
         } else if (alpha == Tconst<T>::mone()) {
             if (beta == Tconst<T>::zero()) {
-                invscal_kernel_special<T, double, -1, 0><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+                invscal_kernel_special<T, double, TCtmp, -1, 0><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
                 return;
             } else if (beta == Tconst<T>::one()) {
-                invscal_kernel_special<T, double, -1, 1><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+                invscal_kernel_special<T, double, TCtmp, -1, 1><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
                 return;
             }
         }
-        invscal_kernel_general<T, double><<<grid_invscal, threads_invscal>>>(alpha, beta, num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+        invscal_kernel_general<T, double, TCtmp><<<grid_invscal, threads_invscal>>>(alpha, beta, num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
 
     } else {
         const double2 P = table::P[table_idx];
 
         if (alpha == Tconst<T>::one()) {
             if (beta == Tconst<T>::zero()) {
-                invscal_kernel_special<T, double2, 1, 0><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+                invscal_kernel_special<T, double2, TCtmp, 1, 0><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
                 return;
             } else if (beta == Tconst<T>::one()) {
-                invscal_kernel_special<T, double2, 1, 1><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+                invscal_kernel_special<T, double2, TCtmp, 1, 1><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
                 return;
             }
         } else if (alpha == Tconst<T>::mone()) {
             if (beta == Tconst<T>::zero()) {
-                invscal_kernel_special<T, double2, -1, 0><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+                invscal_kernel_special<T, double2, TCtmp, -1, 0><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
                 return;
             } else if (beta == Tconst<T>::one()) {
-                invscal_kernel_special<T, double2, -1, 1><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+                invscal_kernel_special<T, double2, TCtmp, -1, 1><<<grid_invscal, threads_invscal>>>(num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
                 return;
             }
         }
-        invscal_kernel_general<T, double2><<<grid_invscal, threads_invscal>>>(alpha, beta, num_moduli, m, sizeC, incC8i, C8i, ldc8i, C, ldc, P, invP, sftA, sftB);
+        invscal_kernel_general<T, double2, TCtmp><<<grid_invscal, threads_invscal>>>(alpha, beta, num_moduli, m, sizeC, incCtmp, Ctmp, ldctmp, C, ldc, P, invP, sftA, sftB);
     }
 }
 

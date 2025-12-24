@@ -10,11 +10,12 @@ namespace real {
 //------------------------------
 // Calculate required work size
 //------------------------------
+template <bool UseExtraWorkspace>
 __inline__ size_t workSize(
-    const size_t m, const size_t n, const size_t k,
-    const unsigned num_moduli,
-    const bool enable_skip_scalA,
-    const bool enable_skip_scalB,
+    size_t m, size_t n, size_t k,
+    unsigned num_moduli,
+    bool enable_skip_scalA,
+    bool enable_skip_scalB,
     size_t *workSizeA,
     size_t *workSizeB //
 ) {
@@ -41,8 +42,12 @@ __inline__ size_t workSize(
     total_size_A += sizeof(int16_t) * size_vecA;
     total_size_B += sizeof(int8_t) * sizeB * num_B8i;
     total_size_B += sizeof(int16_t) * size_vecB;
-    total_size_C += sizeof(int8_t) * sizeC * num_C8i;
-    total_size_C += sizeof(int32_t) * sizeC;
+    if constexpr (UseExtraWorkspace) {
+        total_size_C += sizeof(int32_t) * sizeC * num_moduli;
+    } else {
+        total_size_C += sizeof(int8_t) * sizeC * num_C8i;
+        total_size_C += sizeof(int32_t) * sizeC;
+    }
 
     if (workSizeA != nullptr) *workSizeA = total_size_A;
     if (workSizeB != nullptr) *workSizeB = total_size_B;
@@ -52,24 +57,25 @@ __inline__ size_t workSize(
 //------------------------------
 // GEMM emulation using INT8 Tensor Cores
 //------------------------------
-template <typename T> __inline__ std::vector<double> gemm(
+template <typename T, bool UseExtraWorkspace>
+__inline__ std::vector<double> gemm(
     cublasHandle_t handle,
-    const cublasOperation_t op_A, const cublasOperation_t op_B,
-    const size_t m, const size_t n, const size_t k,
+    cublasOperation_t op_A, cublasOperation_t op_B,
+    size_t m, size_t n, size_t k,
     const T *alpha,
-    const T *const A, const size_t lda,
-    const T *const B, const size_t ldb,
+    const T *const A, size_t lda,
+    const T *const B, size_t ldb,
     const T *beta,
-    T *const C, const size_t ldc,
-    const unsigned num_moduli,
-    const bool fastmode,
+    T *const C, size_t ldc,
+    unsigned num_moduli,
+    bool fastmode,
     void *const work,
     void *const workA,
     void *const workB,
-    const bool enable_skip_scalA,
-    const bool enable_skip_scalB,
-    const bool skip_scalA,
-    const bool skip_scalB //
+    bool enable_skip_scalA,
+    bool enable_skip_scalB,
+    bool skip_scalA,
+    bool skip_scalB //
 ) {
     //------------------------------
     // Timer
@@ -97,7 +103,9 @@ template <typename T> __inline__ std::vector<double> gemm(
     constexpr int32_t one    = 1;
     constexpr int32_t zero   = 0;
     grid_invscal             = (m * n + threads_invscal - 1) / threads_invscal;
-    grid_conv32i8i           = (sizeC_4 + threads_conv32i8i - 1) / threads_conv32i8i;
+    if constexpr (!UseExtraWorkspace) {
+        grid_conv32i8i = (sizeC_4 + threads_conv32i8i - 1) / threads_conv32i8i;
+    }
     bool P_is_double;
 
     //------------------------------
@@ -125,8 +133,17 @@ template <typename T> __inline__ std::vector<double> gemm(
     int16_t *const sftA = reinterpret_cast<int16_t *>(A8i + offsetA + ((enable_skip_scalA) ? sizeA : 0));
     int8_t *const B8i   = reinterpret_cast<int8_t *>((workB) ? workB : ((workA) ? work : (sftA + size_vecA)));
     int16_t *const sftB = reinterpret_cast<int16_t *>(B8i + offsetB + ((enable_skip_scalB) ? sizeB : 0));
-    int8_t *const C8i   = reinterpret_cast<int8_t *>((workB) ? ((workA) ? work : (sftA + size_vecA)) : (sftB + size_vecB));
-    int32_t *const C32i = reinterpret_cast<int32_t *>(C8i + sizeC * num_moduli);
+    int8_t *C8i_tmp;
+    int32_t *C32i_tmp;
+    if constexpr (UseExtraWorkspace) {
+        C8i_tmp  = nullptr;
+        C32i_tmp = reinterpret_cast<int32_t *>((workB) ? ((workA) ? work : (sftA + size_vecA)) : (sftB + size_vecB));
+    } else {
+        C8i_tmp  = reinterpret_cast<int8_t *>((workB) ? ((workA) ? work : (sftA + size_vecA)) : (sftB + size_vecB));
+        C32i_tmp = reinterpret_cast<int32_t *>(C8i_tmp + sizeC * num_moduli);
+    }
+    int8_t *const C8i   = C8i_tmp;
+    int32_t *const C32i = C32i_tmp;
 
     //------------------------------
     // Scaling
@@ -156,53 +173,99 @@ template <typename T> __inline__ std::vector<double> gemm(
     }
     timing(time_stamp, timer[0]);
 
-    for (unsigned i = 0; i < num_moduli; ++i) {
-        //-----------------------------
-        // Error-free matrix multiplication
-        // C32i := A8i*B8i
-        //------------------------------
+    if constexpr (UseExtraWorkspace) {
 
-        int blk    = 8192;
-        int rem    = n;
-        int offset = 0;
+        for (unsigned i = 0; i < num_moduli; ++i) {
+            //-----------------------------
+            // Error-free matrix multiplication
+            // C32i := A8i*B8i
+            //------------------------------
 
-        while (rem > 0) {
-            size_t nn = (rem <= 12288) ? rem : blk;
+            int blk    = 8192;
+            int rem    = n;
+            int offset = 0;
 
-            cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
-                         ldc32i, nn, lda8i,
-                         &one,
-                         A8i + i * sizeA, CUDA_R_8I, lda8i,
-                         B8i + i * sizeB + offset * ldb8i, CUDA_R_8I, ldb8i,
-                         &zero,
-                         C32i + offset * ldc32i, CUDA_R_32I, ldc32i,
-                         CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+            while (rem > 0) {
+                size_t nn = (rem <= 12288) ? rem : blk;
 
-            offset += nn;
-            rem -= nn;
+                cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
+                             ldc32i, nn, lda8i,
+                             &one,
+                             A8i + i * sizeA, CUDA_R_8I, lda8i,
+                             B8i + i * sizeB + offset * ldb8i, CUDA_R_8I, ldb8i,
+                             &zero,
+                             C32i + i * sizeC + offset * ldc32i, CUDA_R_32I, ldc32i,
+                             CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+                offset += nn;
+                rem -= nn;
+            }
+            timing(time_stamp, timer[1]);
         }
-        timing(time_stamp, timer[1]);
 
         //------------------------------
-        // Calculating mod
-        // C8i[i] := mod(C32i, p[i]) >= 0
+        // Accumulation and Inverse scaling
+        // C64f = sum(qi*Pi*C8i[i]),
+        //  where
+        //      Pi := P/p[i],
+        //      P  := prod(p[all]),
+        //      mod(qi*Pi, p[i]) \equiv 1.
+        // C := C64f - round(C64f/P)*P
+        // C := diag(2^sftA) * C * diag(2^sftB)
         //------------------------------
-        conv_32i_2_8i(i, sizeC_4, C32i, C8i + i * sizeC);
-        timing(time_stamp, timer[2]);
+        inverse_scaling<T, int32_t>(P_is_double, num_moduli, m, n, C32i, ldc32i, sizeC, C, ldc, sftA, sftB, *alpha, *beta);
+        timing(time_stamp, timer[3]);
+
+    } else {
+
+        for (unsigned i = 0; i < num_moduli; ++i) {
+            //-----------------------------
+            // Error-free matrix multiplication
+            // C32i := A8i*B8i
+            //------------------------------
+
+            int blk    = 8192;
+            int rem    = n;
+            int offset = 0;
+
+            while (rem > 0) {
+                size_t nn = (rem <= 12288) ? rem : blk;
+
+                cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N,
+                             ldc32i, nn, lda8i,
+                             &one,
+                             A8i + i * sizeA, CUDA_R_8I, lda8i,
+                             B8i + i * sizeB + offset * ldb8i, CUDA_R_8I, ldb8i,
+                             &zero,
+                             C32i + offset * ldc32i, CUDA_R_32I, ldc32i,
+                             CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+
+                offset += nn;
+                rem -= nn;
+            }
+            timing(time_stamp, timer[1]);
+
+            //------------------------------
+            // Calculating mod
+            // C8i[i] := mod(C32i, p[i]) >= 0
+            //------------------------------
+            conv_32i_2_8i(i, sizeC_4, C32i, C8i + i * sizeC);
+            timing(time_stamp, timer[2]);
+        }
+
+        //------------------------------
+        // Accumulation and Inverse scaling
+        // C64f = sum(qi*Pi*C8i[i]),
+        //  where
+        //      Pi := P/p[i],
+        //      P  := prod(p[all]),
+        //      mod(qi*Pi, p[i]) \equiv 1.
+        // C := C64f - round(C64f/P)*P
+        // C := diag(2^sftA) * C * diag(2^sftB)
+        //------------------------------
+        inverse_scaling<T>(P_is_double, num_moduli, m, n, C8i, ldc32i, sizeC, C, ldc, sftA, sftB, *alpha, *beta);
+        timing(time_stamp, timer[3]);
     }
-
-    //------------------------------
-    // Accumulation and Inverse scaling
-    // C64f = sum(qi*Pi*C8i[i]),
-    //  where
-    //      Pi := P/p[i],
-    //      P  := prod(p[all]),
-    //      mod(qi*Pi, p[i]) \equiv 1.
-    // C := C64f - round(C64f/P)*P
-    // C := diag(2^sftA) * C * diag(2^sftB)
-    //------------------------------
-    inverse_scaling<T>(P_is_double, num_moduli, m, n, C8i, ldc32i, sizeC, C, ldc, sftA, sftB, *alpha, *beta);
-    timing(time_stamp, timer[3]);
 
     return timer;
 }

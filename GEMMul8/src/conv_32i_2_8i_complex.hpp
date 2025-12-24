@@ -8,6 +8,13 @@ namespace complex {
 //------------------------------
 // C8i = mod(C32i, 256)
 //------------------------------
+__device__ __forceinline__ double2 conv_32i_2_8i_256_scal(int32_t a, int32_t b, int32_t c) {
+    double2 d;
+    d.x = __int2double_rn((a - b) & 255);
+    d.y = __int2double_rn((c - a - b) & 255);
+    return d;
+}
+
 __global__ void conv_32i_2_8i_256_kernel(
     const size_t sizeC,                       // padding(m*n)/4
     const int32_t *const __restrict__ C32i_1, // input
@@ -49,6 +56,28 @@ __global__ void conv_32i_2_8i_256_kernel(
 //------------------------------
 // C8i = mod(C32i, p)
 //------------------------------
+__device__ __forceinline__ double2 conv_32i_2_8i_not256_scal(int32_t a, int32_t b, int32_t c, unsigned table_idx) {
+    int2 p_invp = table::MODULI_I[table_idx];
+    a -= __mulhi(a, p_invp.y) * p_invp.x;
+    b -= __mulhi(b, p_invp.y) * p_invp.x;
+    c -= __mulhi(c, p_invp.y) * p_invp.x;
+
+    c = c - a - b;
+    c -= __mulhi(c, p_invp.y) * p_invp.x;
+    c -= (c > 127) * p_invp.x;
+    c += (c < -128) * p_invp.x;
+
+    a -= b;
+    a -= __mulhi(a, p_invp.y) * p_invp.x;
+    a -= (a > 127) * p_invp.x;
+    a += (a < -128) * p_invp.x;
+
+    double2 d;
+    d.x = __int2double_rn(a);
+    d.y = __int2double_rn(c);
+    return d;
+}
+
 __global__ void conv_32i_2_8i_not256_kernel(
     const size_t sizeC,                       // padding(m*n)/4
     const int32_t *const __restrict__ C32i_1, // input

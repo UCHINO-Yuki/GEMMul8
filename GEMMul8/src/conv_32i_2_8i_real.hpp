@@ -8,6 +8,10 @@ namespace real {
 //------------------------------
 // C8i = mod(C32i, 256)
 //------------------------------
+__device__ __forceinline__ double conv_32i_2_8i_256_scal(int32_t a) {
+    return __int2double_rn(a & 255);
+}
+
 __global__ void conv_32i_2_8i_256_kernel(
     const size_t sizeC,                     // padding(m*n)/4
     const int32_t *const __restrict__ C32i, // input
@@ -27,6 +31,14 @@ __global__ void conv_32i_2_8i_256_kernel(
 //------------------------------
 // C8i = mod(C32i, p)
 //------------------------------
+__device__ __forceinline__ double conv_32i_2_8i_not256_scal(int32_t a, unsigned table_idx) {
+    int2 p_invp = table::MODULI_I[table_idx];
+    int32_t b   = a - __mulhi(a, p_invp.y) * p_invp.x;
+    b -= (b > 127) * p_invp.x;
+    b += (b < -128) * p_invp.x;
+    return __int2double_rn(b);
+}
+
 __global__ void conv_32i_2_8i_not256_kernel(
     const size_t sizeC,                     // padding(m*n)/4
     const int32_t *const __restrict__ C32i, // input

@@ -19,6 +19,7 @@ It is based on the Ozaki Scheme II, enabling bit-wise reproducible results with 
   - [1. Direct Usage (Normal mode)](#1-direct-usage-normal-mode)
     - [Example: run emulation for the CUDA backend](#example-run-emulation-for-the-cuda-backend)
     - [Arguments of `gemmul8::gemm`](#arguments-of-gemmul8gemm)
+    - [`UseExtraWorkspace` (template parameter)](#useextraworkspace-template-parameter)
     - [Behavior of `skip_scalA` / `skip_scalB`](#behavior-of-skip_scala--skip_scalb)
     - [Example: How to skip scaling step](#example-how-to-skip-scaling-step)
   - [2. Hijack cuBLAS/hipBLAS GEMM (Hook Mode)](#2-hijack-cublashipblas-gemm-hook-mode)
@@ -198,7 +199,7 @@ GEMMul8 provides both a workspace query function (`workSize`) and an extended GE
 namespace gemmul8 {
 
 // workSize returns the required workspace size in bytes.
-template <bool is_Complex = false>          // [option] If true, return workspace size for CGEMM/ZGEMM
+template <bool is_Complex = false, bool UseExtraWorkspace = true>
 size_t workSize(
     const size_t m,                         // Number of rows of C
     const size_t n,                         // Number of columns of C
@@ -211,9 +212,9 @@ size_t workSize(
 );
 
 // gemm returns computation time in second of each computational phase
-// gemm returns computation time in second of each computational phase
 #if defined(__NVCC__)
-template <typename T> std::vector<double> gemm(
+template <typename T, bool UseExtraWorkspace = true>
+std::vector<double> gemm(
     cublasHandle_t handle,                  // Handle to the cuBLAS library context
     const cublasOperation_t op_A,           // CUBLAS_OP_N or CUBLAS_OP_T
     const cublasOperation_t op_B,           // CUBLAS_OP_N or CUBLAS_OP_T
@@ -235,23 +236,24 @@ template <typename T> std::vector<double> gemm(
     void *const workB            = nullptr, // [optional] Separate workspace for B (if nullptr, uses work)
     const bool enable_skip_scalA = false,   // [optional] Enables scaling-skip mechanism for A
     const bool enable_skip_scalB = false,   // [optional] Enables scaling-skip mechanism for B
-    bool skip_scalA              = false,   // [optional] If true, skip preprocessing for A
-    bool skip_scalB              = false    // [optional] If true, skip preprocessing for B
+    const bool skip_scalA        = false,   // [optional] If true, skip preprocessing for A
+    const bool skip_scalB        = false    // [optional] If true, skip preprocessing for B
 );
 #endif
 
 #if defined(__HIPCC__)
-template <typename T> std::vector<double> gemm(
-    hipblasHandle_t handle,                 // Handle to the cuBLAS library context
-    const hipblasOperation_t op_A,          // CUBLAS_OP_N or CUBLAS_OP_T
-    const hipblasOperation_t op_B,          // CUBLAS_OP_N or CUBLAS_OP_T
+template <typename T, bool UseExtraWorkspace = true>
+std::vector<double> gemm(
+    hipblasHandle_t handle,                 // Handle to the hipBLAS library context
+    const hipblasOperation_t op_A,          // HIPBLAS_OP_N or HIPBLAS_OP_T
+    const hipblasOperation_t op_B,          // HIPBLAS_OP_N or HIPBLAS_OP_T
     const size_t m,                         // Number of rows of C
     const size_t n,                         // Number of columns of C
     const size_t k,                         // Inner dimension <= 2^17
     const T *alpha,                         // Scaling factor for op(A)*op(B)
-    const T *const A,                       // 1-D device array of dimensions lda*k (CUBLAS_OP_N) or lda*m (CUBLAS_OP_T)
+    const T *const A,                       // 1-D device array of dimensions lda*k (HIPBLAS_OP_N) or lda*m (HIPBLAS_OP_T)
     const size_t lda,                       // Leading dimension of A
-    const T *const B,                       // 1-D device array of dimensions ldb*n (CUBLAS_OP_N) or ldb*k (CUBLAS_OP_T)
+    const T *const B,                       // 1-D device array of dimensions ldb*n (HIPBLAS_OP_N) or ldb*k (HIPBLAS_OP_T)
     const size_t ldb,                       // Leading dimension of B
     const T *beta,                          // Scaling factor for C
     T *const C,                             // 1-D device array of dimensions ldc*n
@@ -263,13 +265,26 @@ template <typename T> std::vector<double> gemm(
     void *const workB            = nullptr, // [optional] Separate workspace for B (if nullptr, uses work)
     const bool enable_skip_scalA = false,   // [optional] Enables scaling-skip mechanism for A
     const bool enable_skip_scalB = false,   // [optional] Enables scaling-skip mechanism for B
-    bool skip_scalA              = false,   // [optional] If true, skip preprocessing for A
-    bool skip_scalB              = false    // [optional] If true, skip preprocessing for B
+    const bool skip_scalA        = false,   // [optional] If true, skip preprocessing for A
+    const bool skip_scalB        = false    // [optional] If true, skip preprocessing for B
 );
 #endif
 
 } // namespace gemmul8
 ```
+
+#### `UseExtraWorkspace` (template parameter)
+
+`UseExtraWorkspace` trades GPU memory usage for higher performance.
+
+- `UseExtraWorkspace = true`  
+  Enables an implementation that uses additional workspace memory to reduce kernel launch overhead, resulting in higher performance.
+
+- `UseExtraWorkspace = false` (default)  
+  Uses a normal implementation with lower workspace requirements, at the cost of reduced performance.
+
+This option does not affect numerical accuracy or reproducibility.
+Only memory usage and performance characteristics differ.
 
 #### Behavior of `skip_scalA` / `skip_scalB`
 
@@ -396,24 +411,26 @@ export GEMMUL8_MAX_K=4096
 export GEMMUL8_MAX_NUM_MOD=18
 export GEMMUL8_SKIP_SCALE_A=1
 export GEMMUL8_SKIP_SCALE_B=1
+export GEMMUL8_USE_EXTRA_WORKSPACE=1
 ```
 
-| Variable               | Default | Applies to | Description                                                                          |
-| :--------------------- | :------ | :--------- | :----------------------------------------------------------------------------------- |
-| `GEMMUL8_NUM_MOD_D`    | `0`     | DGEMM      | Number of moduli (`unsigned num_moduli`) used in DGEMM emulation. Controls accuracy. |
-| `GEMMUL8_NUM_MOD_S`    | `0`     | SGEMM      | Number of moduli (`unsigned num_moduli`) used in SGEMM emulation. Controls accuracy. |
-| `GEMMUL8_NUM_MOD_Z`    | `0`     | ZGEMM      | Number of moduli (`unsigned num_moduli`) used in ZGEMM emulation. Controls accuracy. |
-| `GEMMUL8_NUM_MOD_C`    | `0`     | CGEMM      | Number of moduli (`unsigned num_moduli`) used in CGEMM emulation. Controls accuracy. |
-| `GEMMUL8_FASTMODE_D`   | `0`     | DGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
-| `GEMMUL8_FASTMODE_S`   | `0`     | SGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
-| `GEMMUL8_FASTMODE_Z`   | `0`     | ZGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
-| `GEMMUL8_FASTMODE_C`   | `0`     | CGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
-| `GEMMUL8_MAX_M`        | `0`     | all        | Maximum value of `M` used to preallocate workspace memory.                           |
-| `GEMMUL8_MAX_N`        | `0`     | all        | Maximum value of `N` used to preallocate workspace memory.                           |
-| `GEMMUL8_MAX_K`        | `0`     | all        | Maximum value of `K` used to preallocate workspace memory.                           |
-| `GEMMUL8_MAX_NUM_MOD`  | `2`     | all        | Maximum number of moduli used when computing the size of the preallocated workspace. |
-| `GEMMUL8_SKIP_SCALE_A` | `0`     | all        | Enables skipping redundant preprocessing for `A` (`1` = enable, `0` = disable).      |
-| `GEMMUL8_SKIP_SCALE_B` | `0`     | all        | Enables skipping redundant preprocessing for `B` (`1` = enable, `0` = disable).      |
+| Variable                      | Default | Applies to | Description                                                                          |
+| :---------------------------- | :------ | :--------- | :----------------------------------------------------------------------------------- |
+| `GEMMUL8_NUM_MOD_D`           | `0`     | DGEMM      | Number of moduli (`unsigned num_moduli`) used in DGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_S`           | `0`     | SGEMM      | Number of moduli (`unsigned num_moduli`) used in SGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_Z`           | `0`     | ZGEMM      | Number of moduli (`unsigned num_moduli`) used in ZGEMM emulation. Controls accuracy. |
+| `GEMMUL8_NUM_MOD_C`           | `0`     | CGEMM      | Number of moduli (`unsigned num_moduli`) used in CGEMM emulation. Controls accuracy. |
+| `GEMMUL8_FASTMODE_D`          | `0`     | DGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_FASTMODE_S`          | `0`     | SGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_FASTMODE_Z`          | `0`     | ZGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_FASTMODE_C`          | `0`     | CGEMM      | Enables fast mode (`1` = fast mode, `0` = accurate mode).                            |
+| `GEMMUL8_MAX_M`               | `0`     | all        | Maximum value of `M` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_N`               | `0`     | all        | Maximum value of `N` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_K`               | `0`     | all        | Maximum value of `K` used to preallocate workspace memory.                           |
+| `GEMMUL8_MAX_NUM_MOD`         | `2`     | all        | Maximum number of moduli used when computing the size of the preallocated workspace. |
+| `GEMMUL8_SKIP_SCALE_A`        | `0`     | all        | Enables skipping redundant preprocessing for `A` (`1` = enable, `0` = disable).      |
+| `GEMMUL8_SKIP_SCALE_B`        | `0`     | all        | Enables skipping redundant preprocessing for `B` (`1` = enable, `0` = disable).      |
+| `GEMMUL8_USE_EXTRA_WORKSPACE` | `0`     | all        | Enables extra workspace for intermediate buffers (`1` = enable, `0` = disable).      |
 
 - If `GEMMUL8_NUM_MOD_{S|D|Z|C} < 2 || 20 < GEMMUL8_NUM_MOD_{S|D|Z|C}`, execute the corresponding native gemm routine.
 - This hook mode preallocates a single large GPU workspace on demand and resizes as needed.
@@ -426,6 +443,7 @@ export GEMMUL8_SKIP_SCALE_B=1
 - If `GEMMUL8_MAX_{M|N|K|NUM_MOD}` variables are set appropriately, the workspace size becomes fixed to `wsmax`, avoiding costly reallocations during subsequent GEMM calls.
 - If `GEMMUL8_NUM_MOD_Z > 0` or `GEMMUL8_NUM_MOD_C > 0`, `wsmax` is workspace size for complex cases.
 - The workspace is **never shrunk** automatically; it only grows when a larger allocation is required.
+- When `GEMMUL8_USE_EXTRA_WORKSPACE=1`, GEMMUL8 allocates and uses an additional internal workspace to store intermediate results in an expanded format. This can improve performance at the cost of increased GPU memory usage.
 - When `GEMMUL8_SKIP_SCALE_{A|B}=1`, redundant preprocessing for `A`/`B` is skipped (see below).
 
 > [!IMPORTANT]
