@@ -476,6 +476,18 @@ See numerical results in the separate repository: [GEMMul8_numerical_results](ht
 }
 ```
 
+```bibtex
+@misc{uchino2026doubleprecisionmatrixmultiplicationemulation,
+      title={Double-Precision Matrix Multiplication Emulation via Ozaki-II Scheme with FP8 Quantization}, 
+      author={Yuki Uchino and Katsuhisa Ozaki and Toshiyuki Imamura},
+      year={2026},
+      eprint={2603.10634},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC},
+      url={https://arxiv.org/abs/2603.10634}, 
+}
+```
+
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
