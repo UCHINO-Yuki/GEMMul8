@@ -344,6 +344,20 @@ static cublasStatus_t get_work_locked(void *&buf, size_t &buf_size, size_t req_s
         return CUBLAS_STATUS_SUCCESS;
     }
 
+    if (buf) {
+        void *old = buf;
+        cudaError_t free_err = cudaFreeAsync(old, stream);
+        if (free_err != cudaSuccess) {
+            *out = nullptr;
+            std::cerr << "[GEMMUL8 HOOK] cudaFreeAsync failed for "
+                    << (tag ? tag : "workspace")
+                    << " (" << cudaGetErrorString(free_err) << ")\n";
+            return CUBLAS_STATUS_INTERNAL_ERROR;
+        }
+        buf = nullptr;
+        buf_size = 0;
+    }
+
     void *newp      = nullptr;
     cudaError_t err = cudaMallocAsync(&newp, req_size, stream);
     if (err != cudaSuccess) {
@@ -351,23 +365,6 @@ static cublasStatus_t get_work_locked(void *&buf, size_t &buf_size, size_t req_s
         std::cerr << "[GEMMUL8 HOOK] cudaMallocAsync failed for " << (tag ? tag : "workspace")
                   << " size " << req_size << " bytes. Error: " << cudaGetErrorString(err) << "\n";
         return CUBLAS_STATUS_ALLOC_FAILED;
-    }
-
-    if (buf) {
-        cudaError_t free_err = cudaFreeAsync(buf, stream);
-        if (free_err != cudaSuccess) {
-            std::cerr << "[GEMMUL8 HOOK] Warning: cudaFreeAsync failed for " << (tag ? tag : "workspace")
-                      << " (" << cudaGetErrorString(free_err) << ")\n";
-
-            cudaError_t free_new_err = cudaFreeAsync(newp, stream);
-            if (free_new_err != cudaSuccess) {
-                std::cerr << "[GEMMUL8 HOOK] Warning: cudaFreeAsync failed for newly-allocated "
-                          << (tag ? tag : "workspace") << " (" << cudaGetErrorString(free_new_err) << ")\n";
-            }
-
-            *out = nullptr;
-            return CUBLAS_STATUS_INTERNAL_ERROR;
-        }
     }
 
     buf      = newp;
@@ -384,7 +381,6 @@ static void cleanup_work(cublasHandle_t handle) {
 
     {
         std::lock_guard<std::mutex> lk(sp->mtx);
-        // 可能なら「最後に使った stream」を優先
         if (sp->last_stream_valid) {
             stream      = sp->last_stream;
             have_stream = true;
