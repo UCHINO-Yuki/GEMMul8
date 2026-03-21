@@ -16,6 +16,7 @@
 #include "eval.hpp"
 #include "make_matrix.hpp"
 
+#include "ozaki1.hpp"
 #include "common.hpp"
 #include "test_accuracy.hpp"
 #include "test_flops.hpp"

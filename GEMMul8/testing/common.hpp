@@ -38,9 +38,9 @@ std::vector<double> phi_list{-1.0, 0.0, 0.5, 1.0, 2.0, 4.0};
 template <typename T> inline constexpr unsigned NUM_MODULI_MIN        = 3;
 template <typename T> inline constexpr unsigned NUM_MODULI_MAX        = 12;
 template <> inline constexpr unsigned NUM_MODULI_MIN<double>          = 9;
-template <> inline constexpr unsigned NUM_MODULI_MAX<double>          = 18;
+template <> inline constexpr unsigned NUM_MODULI_MAX<double>          = 20;
 template <> inline constexpr unsigned NUM_MODULI_MIN<cuDoubleComplex> = 9;
-template <> inline constexpr unsigned NUM_MODULI_MAX<cuDoubleComplex> = 18;
+template <> inline constexpr unsigned NUM_MODULI_MAX<cuDoubleComplex> = 20;
 inline constexpr size_t size_max = 65536;
 
 std::string getDeviceName() {
@@ -74,6 +74,7 @@ template <> struct gemmTraits<float> {
     static constexpr char prefix     = 's';
     static constexpr auto gemm       = &cublasSgemm;
     static constexpr bool is_complex = false;
+    static constexpr bool is_double  = false;
     using ACCU_TYPE                  = double;
 
     static constexpr float one() { return 1.0f; }
@@ -85,6 +86,7 @@ template <> struct gemmTraits<double> {
     static constexpr char prefix     = 'd';
     static constexpr auto gemm       = &cublasDgemm;
     static constexpr bool is_complex = false;
+    static constexpr bool is_double  = true;
     using ACCU_TYPE                  = double2;
 
     static constexpr double one() { return 1.0; }
@@ -96,6 +98,7 @@ template <> struct gemmTraits<cuFloatComplex> {
     static constexpr char prefix     = 'c';
     static constexpr auto gemm       = &cublasCgemm;
     static constexpr bool is_complex = true;
+    static constexpr bool is_double  = false;
     using ACCU_TYPE                  = cuDoubleComplex;
 
     static constexpr cuFloatComplex one() { return cuFloatComplex{1.0f, 0.0f}; }
@@ -107,6 +110,7 @@ template <> struct gemmTraits<cuDoubleComplex> {
     static constexpr char prefix     = 'z';
     static constexpr auto gemm       = &cublasZgemm;
     static constexpr bool is_complex = true;
+    static constexpr bool is_double  = true;
     using ACCU_TYPE                  = eval::dd::double2_complex;
 
     static constexpr cuDoubleComplex one() { return cuDoubleComplex{1.0, 0.0}; }
