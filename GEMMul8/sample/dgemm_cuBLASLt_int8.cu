@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
 
     const double alpha = 1.0;
     const double beta  = 0.0;
-    gemmul8::gemm<double, backend>(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+    gemmul8::gemmLt<double, backend>(handle, CUBLAS_OP_N, CUBLAS_OP_N,
                                    m, n, k, &alpha, A, lda, B, ldb, &beta, C, ldc,
                                    num_moduli, fastmode, work);
     cudaMemcpy(hC.data(), C, ldc * n * sizeof(double), cudaMemcpyDeviceToHost);

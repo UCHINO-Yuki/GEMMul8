@@ -19,7 +19,7 @@ This design enables bit-wise reproducible results while achieving superior perfo
 - [Usage](#usage)
   - [1. Direct Usage (Normal mode)](#1-direct-usage-normal-mode)
     - [Example: run emulation for the CUDA backend](#example-run-emulation-for-the-cuda-backend)
-    - [Arguments of `gemmul8::gemm`](#arguments-of-gemmul8gemm)
+    - [Arguments of `gemmul8::gemm` \& `gemmul8::gemmLt`](#arguments-of-gemmul8gemm--gemmul8gemmlt)
     - [Behavior of `skip_scalA` / `skip_scalB`](#behavior-of-skip_scala--skip_scalb)
     - [Example: How to skip scaling step](#example-how-to-skip-scaling-step)
   - [2. Hijack cuBLAS/hipBLAS GEMM (Hook Mode)](#2-hijack-cublashipblas-gemm-hook-mode)
@@ -149,19 +149,20 @@ This gives you fine-grained control over the emulation parameters.
 
 See the sample code in `sample/`.
 
-#### Arguments of `gemmul8::gemm`
+#### Arguments of `gemmul8::gemm` & `gemmul8::gemmLt`
 
-The arguments for `gemmul8::gemm` closely match the standard [cublas&lt;t&gt;gemm](https://docs.nvidia.com/cuda/cublas/#cublas-t-gemm) and [hipblasXgemm](https://rocm.docs.amd.com/projects/hipBLAS/en/develop/reference/hipblas-api-functions.html#hipblasxgemm-batched-stridedbatched) interfaces, with additional parameters that control internal preprocessing and workspace reuse.
+The arguments for `gemmul8::gemm` & `gemmul8::gemmLt` closely match the standard [cublas&lt;t&gt;gemm](https://docs.nvidia.com/cuda/cublas/#cublas-t-gemm) and [hipblasXgemm](https://rocm.docs.amd.com/projects/hipBLAS/en/develop/reference/hipblas-api-functions.html#hipblasxgemm-batched-stridedbatched) interfaces, with additional parameters that control internal preprocessing and workspace reuse.
 
 GEMMul8 provides both a workspace query function (`workSize`) and an extended GEMM computation interface (`gemm`).
 See `include/gemmul8.hpp` for the full function signatures:
 
 - `gemmul8::workSize<is_Complex, Backend>(...)`
-- `gemmul8::gemm<T, Backend>(...)` (BLAS handle / Lt handle overloads)
+- `gemmul8::gemm<T, Backend>(...)` (BLAS handle overload)
+- `gemmul8::gemmLt<T, Backend>(...)` (BLASLt handle overload)
 
 #### Behavior of `skip_scalA` / `skip_scalB`
 
-- `gemmul8::gemm` internally preprocesses the input matrices `A` and `B` into a backend-specific low-precision representation (INT8 or FP8) and performs modular multiplications across multiple moduli.
+- `gemmul8::gemm` & `gemmul8::gemmLt` internally preprocesses the input matrices `A` and `B` into a backend-specific low-precision representation (INT8 or FP8) and performs modular multiplications across multiple moduli.
 - This preprocessing step can be **skipped** in consecutive GEMM calls if the same matrices are reused, allowing for substantial performance gains.
 - If `enable_skip_scal{A|B} = true`, additional workspace is reserved so that the preprocessed representation of `A`/`B` can be retained between calls.
 - If both `enable_skip_scal{A|B} && skip_scal{A|B} = true`, the preprocessing step for `A`/`B` is **actually skipped**, and previously prepared data are reused for faster execution.

@@ -133,7 +133,15 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             outFile << phi << "," << k << ",OS2-fast,";
             std::cout << phi << "," << k << ",OS2-fast,";
             for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
-                gemmul8::gemm<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
+#if defined(__NVCC__)
+                gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
+#else
+                if constexpr (backend == gemmul8::Backend::INT8) {
+                    gemmul8::gemm<T, backend>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
+                } else {
+                    gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
+                }
+#endif
                 CHECK_CUDA(cudaGetLastError());
                 CHECK_CUDA(cudaDeviceSynchronize());
                 CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));
@@ -150,7 +158,15 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             outFile << phi << "," << k << ",OS2-accu,";
             std::cout << phi << "," << k << ",OS2-accu,";
             for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
-                gemmul8::gemm<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
+#if defined(__NVCC__)
+                gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
+#else
+                if constexpr (backend == gemmul8::Backend::INT8) {
+                    gemmul8::gemm<T, backend>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
+                } else {
+                    gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
+                }
+#endif
                 CHECK_CUDA(cudaGetLastError());
                 CHECK_CUDA(cudaDeviceSynchronize());
                 CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));

@@ -66,7 +66,7 @@ std::vector<double> gemm(
 );
 
 template <typename T, Backend backend = Backend::INT8>
-std::vector<double> gemm(
+std::vector<double> gemmLt(
     cublasLtHandle_t handle,          // Handle to the cuBLASLt library context
     cublasOperation_t op_A,           // CUBLAS_OP_N, CUBLAS_OP_T, or CUBLAS_OP_C
     cublasOperation_t op_B,           // CUBLAS_OP_N, CUBLAS_OP_T, or CUBLAS_OP_C
@@ -123,8 +123,8 @@ std::vector<double> gemm(
 );
 
 template <typename T, Backend backend = Backend::INT8>
-std::vector<double> gemm(
-    hipblasLtHandle_t handle,         // Handle to the hipBLAS library context
+std::vector<double> gemmLt(
+    hipblasLtHandle_t handle,         // Handle to the hipBLASLt library context
     hipblasOperation_t op_A,          // HIPBLAS_OP_N, HIPBLAS_OP_T, or HIPBLAS_OP_C
     hipblasOperation_t op_B,          // HIPBLAS_OP_N, HIPBLAS_OP_T, or HIPBLAS_OP_C
     size_t m,                         // Number of rows of C
@@ -147,7 +147,7 @@ std::vector<double> gemm(
     bool enable_skip_scalB = false,   // [optional] Enables scaling-skip mechanism for B
     bool skip_scalA        = false,   // [optional] If true, skip preprocessing for A
     bool skip_scalB        = false,   // [optional] If true, skip preprocessing for B
-    cudaStream_t stream    = 0        // [optional] stream identifier
+    hipStream_t stream     = 0        // [optional] stream identifier
 );
 #endif
 

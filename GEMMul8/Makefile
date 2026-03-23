@@ -52,7 +52,7 @@ endif
 ifeq ($(BACKEND),hip)
 
 ifeq ($(GPU_ARCH),auto)
-override GPU_ARCH := $(shell amd-smi static --asic --csv | grep -o 'gfx[0-9]\+' | head -n 1)
+override GPU_ARCH := $(shell amd-smi static --asic --csv | grep -oE 'gfx[0-9]+[a-z]*' | head -n 1)
 endif
 
 export PATH := $(HIP_PATH)/bin:$(PATH)
@@ -61,8 +61,8 @@ export LD_LIBRARY_PATH := $(HIP_PATH)/lib:$(LD_LIBRARY_PATH)
 COMPILER := hipcc
 FLAGS := -std=c++20 -O3
 FLAGS += -ffp-contract=off
-FLAGS += -Wno-unused-result -Wno-unused-command-line-argument
-FLAGS += -DOCML_BASIC_ROUNDED_OPERATIONS
+FLAGS += -Wno-unused-result -Wno-unused-command-line-argument -Wno-unused-value
+FLAGS += -DOCML_BASIC_ROUNDED_OPERATIONS -DGPU_ARCH=$(GPU_ARCH)
 LIBS := -lamd_smi -lamdhip64 -lhipblas -lhipblaslt -ldl
 ARCH := --offload-arch=$(GPU_ARCH)
 

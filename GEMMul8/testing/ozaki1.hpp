@@ -1,5 +1,6 @@
 #pragma once
 
+#if defined(__NVCC__)
 namespace ozaki1 {
 
 template <typename T1, typename T2> __forceinline__ T1 ceildiv(T1 n, T2 d) { return (n + d - 1) / d; }
@@ -49,3 +50,4 @@ void setting(cublasHandle_t cublasH, int m, int n, int k, int num_slice, bool is
 }
 
 } // namespace ozaki1
+#endif
