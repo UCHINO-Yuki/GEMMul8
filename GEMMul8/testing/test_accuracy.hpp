@@ -45,9 +45,13 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
 
 #if defined(__NVCC__)
     if (gemmTraits<T>::is_double) {
+    #if CUBLAS_GE_13_1
         ozaki1::setting(handle_Emu, m, n, size_max, 11, gemmTraits<T>::is_complex);
+    #endif
     } else {
+    #if CUBLAS_GE_12_9
         cublasSetMathMode(handle_Emu, CUBLAS_FP32_EMULATED_BF16X9_MATH);
+    #endif
     }
 #endif
 
@@ -97,6 +101,7 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
 #if defined(__NVCC__)
             {
                 if (gemmTraits<T>::is_double) {
+    #if CUBLAS_GE_13_1
                     for (int num_slice = 6; num_slice < 12; ++num_slice) {
                         cublasSetFixedPointEmulationMaxMantissaBitCount(handle_Emu, 8 * num_slice - 1);
                         CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
@@ -112,7 +117,9 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                         outFile << std::endl;
                         std::cout << std::endl;
                     }
+    #endif
                 } else {
+    #if CUBLAS_GE_12_9
                     CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                     auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
                     CHECK_CUDA(cudaGetLastError());
@@ -125,6 +132,7 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                     }
                     outFile << std::endl;
                     std::cout << std::endl;
+    #endif
                 }
             }
 #endif

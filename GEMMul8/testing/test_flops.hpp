@@ -42,7 +42,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
             const size_t size_C           = m * n;
             const unsigned num_moduli_max = NUM_MODULI_MAX<T>;
             const size_t lwork_gemmul8    = gemmul8::workSize<gemmTraits<T>::is_complex, backend>(m, n, k, num_moduli_max);
-#if defined(__NVCC__)
+#if defined(__NVCC__) && CUBLAS_GE_13_1
             const size_t lwork_ozaki1 = (gemmTraits<T>::is_double) ? ozaki1::workSize(m, n, k, 1, gemmTraits<T>::is_complex, CUDA_EMULATION_MANTISSA_CONTROL_FIXED, 8 * 9 - 1) : 0;
 #else
             const size_t lwork_ozaki1 = 0;
@@ -270,7 +270,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
 #if defined(__NVCC__)
             if (gemmTraits<T>::is_double) {
                 if (cuBLASversion >= 13.1) {
-
+    #if CUBLAS_GE_13_1
                     cublasSetMathMode(handle, CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH);
                     cublasSetEmulationStrategy(handle, CUBLAS_EMULATION_STRATEGY_EAGER);
                     cublasSetFixedPointEmulationMantissaControl(handle, CUDA_EMULATION_MANTISSA_CONTROL_FIXED);
@@ -310,11 +310,12 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                     }
 
                     cublasSetMathMode(handle, CUBLAS_DEFAULT_MATH);
+    #endif
                 }
 
             } else {
                 if (cuBLASversion >= 12.9) {
-
+    #if CUBLAS_GE_12_9
                     cublasSetMathMode(handle, CUBLAS_FP32_EMULATED_BF16X9_MATH);
 
                     CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
@@ -346,6 +347,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                     std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
 
                     cublasSetMathMode(handle, CUBLAS_DEFAULT_MATH);
+    #endif
                 }
             }
 #endif

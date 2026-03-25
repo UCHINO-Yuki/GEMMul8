@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(__NVCC__)
+#if defined(__NVCC__) && CUBLAS_GE_13_1
 namespace ozaki1 {
 
 template <typename T1, typename T2> __forceinline__ T1 ceildiv(T1 n, T2 d) { return (n + d - 1) / d; }
