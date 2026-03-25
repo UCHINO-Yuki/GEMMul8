@@ -41,7 +41,7 @@ template <> inline constexpr unsigned NUM_MODULI_MIN<double>          = 9;
 template <> inline constexpr unsigned NUM_MODULI_MAX<double>          = 20;
 template <> inline constexpr unsigned NUM_MODULI_MIN<cuDoubleComplex> = 9;
 template <> inline constexpr unsigned NUM_MODULI_MAX<cuDoubleComplex> = 20;
-inline constexpr size_t size_max = 65536;
+inline constexpr size_t size_max                                      = 65536;
 
 std::string getDeviceName() {
     cudaDeviceProp deviceProp;
@@ -109,6 +109,7 @@ template <> struct gemmTraits<cuFloatComplex> {
 template <> struct gemmTraits<cuDoubleComplex> {
     static constexpr char prefix     = 'z';
     static constexpr auto gemm       = &cublasZgemm;
+    static constexpr auto gemm3m     = &cublasZgemm3m;
     static constexpr bool is_complex = true;
     static constexpr bool is_double  = true;
     using ACCU_TYPE                  = eval::dd::double2_complex;

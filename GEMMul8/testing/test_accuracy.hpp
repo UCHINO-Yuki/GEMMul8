@@ -97,6 +97,24 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                 std::cout << std::endl;
             }
 
+#if defined(__NVCC__)
+            // native gemm3m
+            if constexpr (gemmTraits<T>::is_double && gemmTraits<T>::is_complex) {
+                CHECK_CUBLAS(gemmTraits<T>::gemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
+                CHECK_CUDA(cudaGetLastError());
+                CHECK_CUDA(cudaDeviceSynchronize());
+                outFile << phi << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m,";
+                std::cout << phi << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m,";
+                for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
+                    outFile << err_max << ",";
+                    std::cout << err_max << ",";
+                }
+                outFile << std::endl;
+                std::cout << std::endl;
+            }
+#endif
+
             // cuBLAS emulation
 #if defined(__NVCC__)
             {

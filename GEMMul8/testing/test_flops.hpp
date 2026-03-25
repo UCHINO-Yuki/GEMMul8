@@ -112,6 +112,38 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                 std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
             }
 
+            // native gemm3m
+#if defined(__NVCC__)
+            if constexpr (gemmTraits<T>::is_double && gemmTraits<T>::is_complex) {
+                CHECK_CUBLAS(gemmTraits<T>::gemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
+                CHECK_CUDA(cudaGetLastError());
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                for (int i = 1; i < warmup; ++i) {
+                    CHECK_CUBLAS(gemmTraits<T>::gemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                }
+
+                for (int i = 0; i < mainloop; ++i) {
+                    CHECK_CUDA(cudaEventRecord(start));
+                    CHECK_CUBLAS(gemmTraits<T>::gemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                    CHECK_CUDA(cudaEventRecord(stop));
+                    CHECK_CUDA(cudaEventSynchronize(stop));
+                    CHECK_CUDA(cudaEventElapsedTime(&times[i], start, stop));
+                }
+
+                sort(times.begin(), times.end());
+                double time_med = (mainloop & 1) ? double(times[mainloop / 2]) : ((double(times[mainloop / 2]) + double(times[mainloop / 2 - 1])) * 0.5);
+                time_med *= 1.e-3;
+                double TFLOPS = 2.0 * m * n * k * ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) / time_med * 1.0e-12;
+
+                outFile << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m" << ",";
+                outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+                std::cout << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m" << ",";
+                std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+            }
+#endif
+
             // fast mode
             for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
 
