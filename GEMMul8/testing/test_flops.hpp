@@ -8,6 +8,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
     CHECK_CUDA(cudaSetDevice(0));
     cublasHandle_t handle;
     CHECK_CUBLAS(cublasCreate(&handle));
+    cublasHandle_t handle_Emu;
+    CHECK_CUBLAS(cublasCreate(&handle_Emu));
     cublasLtHandle_t handleLt;
     CHECK_CUBLASLT(cublasLtCreate(&handleLt));
 
@@ -61,7 +63,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
             CHECK_CUDA(cudaMalloc(reinterpret_cast<void **>(&A), size_A * sizeof(T)));
             CHECK_CUDA(cudaMalloc(reinterpret_cast<void **>(&B), size_B * sizeof(T)));
             CHECK_CUDA(cudaMalloc(reinterpret_cast<void **>(&C), size_C * sizeof(T)));
-            CHECK_CUDA(cudaMalloc(&work, lwork_gemmul8));
+            CHECK_CUDA(cudaMalloc(&work, lwork));
             C_hi = reinterpret_cast<accu_t *>(work);
 
             const int64_t mi = static_cast<int64_t>(m);
@@ -301,30 +303,30 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
 // cuBLAS emulation
 #if defined(__NVCC__)
             if (gemmTraits<T>::is_double) {
-                if (cuBLASversion >= 13.1) {
+                if (cuBLASversion >= 130100) {
     #if CUBLAS_GE_13_1
-                    cublasSetMathMode(handle, CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH);
-                    cublasSetEmulationStrategy(handle, CUBLAS_EMULATION_STRATEGY_EAGER);
-                    cublasSetFixedPointEmulationMantissaControl(handle, CUDA_EMULATION_MANTISSA_CONTROL_FIXED);
-                    cublasSetWorkspace(handle, work, lwork);
+                    cublasSetMathMode(handle_Emu, CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH);
+                    cublasSetEmulationStrategy(handle_Emu, CUBLAS_EMULATION_STRATEGY_EAGER);
+                    cublasSetFixedPointEmulationMantissaControl(handle_Emu, CUDA_EMULATION_MANTISSA_CONTROL_FIXED);
+                    cublasSetWorkspace(handle_Emu, work, lwork);
 
                     for (int num_slice = 6; num_slice < 10; ++num_slice) {
                         int mantissaBitCount = num_slice * 8 - 1;
-                        cublasSetFixedPointEmulationMaxMantissaBitCount(handle, mantissaBitCount);
+                        cublasSetFixedPointEmulationMaxMantissaBitCount(handle_Emu, mantissaBitCount);
 
-                        CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                        CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                         CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));
                         auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
                         CHECK_CUDA(cudaGetLastError());
                         CHECK_CUDA(cudaDeviceSynchronize());
 
                         for (int i = 1; i < warmup; ++i) {
-                            CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                            CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                         }
 
                         for (int i = 0; i < mainloop; ++i) {
                             CHECK_CUDA(cudaEventRecord(start));
-                            CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                            CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                             CHECK_CUDA(cudaEventRecord(stop));
                             CHECK_CUDA(cudaEventSynchronize(stop));
                             CHECK_CUDA(cudaEventElapsedTime(&times[i], start, stop));
@@ -341,28 +343,28 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                         std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                     }
 
-                    cublasSetMathMode(handle, CUBLAS_DEFAULT_MATH);
+                    cublasSetMathMode(handle_Emu, CUBLAS_DEFAULT_MATH);
     #endif
                 }
 
             } else {
                 if (cuBLASversion >= 12.9) {
     #if CUBLAS_GE_12_9
-                    cublasSetMathMode(handle, CUBLAS_FP32_EMULATED_BF16X9_MATH);
+                    cublasSetMathMode(handle_Emu, CUBLAS_FP32_EMULATED_BF16X9_MATH);
 
-                    CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                    CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                     CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));
                     auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
                     CHECK_CUDA(cudaGetLastError());
                     CHECK_CUDA(cudaDeviceSynchronize());
 
                     for (int i = 1; i < warmup; ++i) {
-                        CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                        CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                     }
 
                     for (int i = 0; i < mainloop; ++i) {
                         CHECK_CUDA(cudaEventRecord(start));
-                        CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                        CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                         CHECK_CUDA(cudaEventRecord(stop));
                         CHECK_CUDA(cudaEventSynchronize(stop));
                         CHECK_CUDA(cudaEventElapsedTime(&times[i], start, stop));
@@ -378,7 +380,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                     std::cout << phi << "," << m << "," << n << "," << k << "," << "BF16x9" << ",";
                     std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
 
-                    cublasSetMathMode(handle, CUBLAS_DEFAULT_MATH);
+                    cublasSetMathMode(handle_Emu, CUBLAS_DEFAULT_MATH);
     #endif
                 }
             }
@@ -395,6 +397,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
     CHECK_CUDA(cudaEventDestroy(stop));
     CHECK_CUDA(cudaEventDestroy(start));
     CHECK_CUBLASLT(cublasLtDestroy(handleLt));
+    CHECK_CUBLAS(cublasDestroy(handle_Emu));
     CHECK_CUBLAS(cublasDestroy(handle));
     outFile.close();
 }
