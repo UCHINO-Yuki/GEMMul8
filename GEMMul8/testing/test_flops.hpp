@@ -343,6 +343,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                         std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                     }
 
+                    cublasSetWorkspace(handle_Emu, nullptr, 0);
                     cublasSetMathMode(handle_Emu, CUBLAS_DEFAULT_MATH);
     #endif
                 }
