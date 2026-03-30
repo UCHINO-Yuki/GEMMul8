@@ -68,7 +68,7 @@ end
 
 %% plot
 labels = ["quant" "gemms" "requant" "dequant" "others"];
-size_list = [1024 2048 4096 8192 16384];
+size_list = [1024 2048 4096 8192 16384 32768];
 for i=length(size_list):-1:1
     if size_list(i)>min(max(m_i8),max(m_f8))
         size_list(i)=[];
@@ -103,14 +103,16 @@ for tid = 1:length(size_list)
     ylim([0 100]);
     yticks(0:20:100);
     if tid == 1
-        ylabel({"INT8-based","fast (16 moduli)"},'FontSize',FontSize);
+        ylabel({"INT8-fast","(16 moduli)"},'FontSize',FontSize);
         yticklabels(0:20:100);
     else
         yticklabels([]);
     end
     set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
     xticks(1:length(xlims));
-    xticktxt = "2^{" + log2(xlims) + "}"; xticktxt(2:2:end)=""; xticklabels(xticktxt);
+    xticktxt = "2^{" + log2(xlims) + "}";
+    xticktxt([2:floor(length(xticktxt)/2), floor(length(xticktxt)/2)+2:end-1])=""; 
+    xticklabels(xticktxt);
     xtickangle(0)
     xlim([0.25 length(xlims)+0.75])
     ax = gca;
@@ -121,6 +123,7 @@ for tid = 1:length(size_list)
         yyaxis right
         ylim([0 100]);
         yticks(0:20:100);
+        yticklabels([]);
         ax = gca;
         ax.YAxis(2).Color = 'k';
     end
@@ -151,14 +154,16 @@ for tid = 1:length(size_list)
     ylim([0 100]);
     yticks(0:20:100);
     if tid == 1
-        ylabel({"INT8-based","accu. (15 moduli)"},'FontSize',FontSize);
+        ylabel({"INT8-accu.","(15 moduli)"},'FontSize',FontSize);
         yticklabels(0:20:100);
     else
         yticklabels([]);
     end
     set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
     xticks(1:length(xlims));
-    xticktxt = "2^{" + log2(xlims) + "}"; xticktxt(2:2:end)=""; xticklabels(xticktxt);
+    xticktxt = "2^{" + log2(xlims) + "}";
+    xticktxt([2:floor(length(xticktxt)/2), floor(length(xticktxt)/2)+2:end-1])=""; 
+    xticklabels(xticktxt);
     xtickangle(0)
     xlim([0.25 length(xlims)+0.75])
     ax = gca;
@@ -169,6 +174,7 @@ for tid = 1:length(size_list)
         yyaxis right
         ylim([0 100]);
         yticks(0:20:100);
+        yticklabels([]);
         ax = gca;
         ax.YAxis(2).Color = 'k';
     end
@@ -199,14 +205,16 @@ for tid = 1:length(size_list)
     ylim([0 100]);
     yticks(0:20:100);
     if tid == 1
-        ylabel({"FP8-based","fast (13 moduli)"},'FontSize',FontSize);
+        ylabel({"FP8-fast","(13 moduli)"},'FontSize',FontSize);
         yticklabels(0:20:100);
     else
         yticklabels([]);
     end
     set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
     xticks(1:length(xlims));
-    xticktxt = "2^{" + log2(xlims) + "}"; xticktxt(2:2:end)=""; xticklabels(xticktxt);
+    xticktxt = "2^{" + log2(xlims) + "}";
+    xticktxt([2:floor(length(xticktxt)/2), floor(length(xticktxt)/2)+2:end-1])=""; 
+    xticklabels(xticktxt);
     xtickangle(0)
     xlim([0.25 length(xlims)+0.75])
     ax = gca;
@@ -217,6 +225,7 @@ for tid = 1:length(size_list)
         yyaxis right
         ylim([0 100]);
         yticks(0:20:100);
+        yticklabels([]);
         ax = gca;
         ax.YAxis(2).Color = 'k';
     end
@@ -247,14 +256,16 @@ for tid = 1:length(size_list)
     ylim([0 100]);
     yticks(0:20:100);
     if tid == 1
-        ylabel({"FP8-based","accu. (12 moduli)"},'FontSize',FontSize);
+        ylabel({"FP8-accu.","(12 moduli)"},'FontSize',FontSize);
         yticklabels(0:20:100);
     else
         yticklabels([]);
     end
     set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
     xticks(1:length(xlims));
-    xticktxt = "2^{" + log2(xlims) + "}"; xticktxt(2:2:end)=""; xticklabels(xticktxt);
+    xticktxt = "2^{" + log2(xlims) + "}";
+    xticktxt([2:floor(length(xticktxt)/2), floor(length(xticktxt)/2)+2:end-1])=""; 
+    xticklabels(xticktxt);
     xtickangle(0)
     xlim([0.25 length(xlims)+0.75])
     ax = gca;
@@ -265,6 +276,7 @@ for tid = 1:length(size_list)
         yyaxis right
         ylim([0 100]);
         yticks(0:20:100);
+        yticklabels([]);
         ax = gca;
         ax.YAxis(2).Color = 'k';
     end

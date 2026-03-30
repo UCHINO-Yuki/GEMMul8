@@ -2,7 +2,7 @@ function plot_accuracy(type_in,GPU_name)
 
 arguments (Input)
     type_in (1,1) string = "d"
-    GPU_name (1,1) string = "RTX5080"
+    GPU_name (1,1) string = "B200"
 end
 
 FontSize = 8;
@@ -51,7 +51,7 @@ yl_min = inf;
 yl_max = 0;
 phi = [-1, 1, 2, 4];
 fig = figure('Position',[50,50,500,400]);
-t = tiledlayout(2,2);
+t = tiledlayout(1,4);
 for tid = 1:4
     nexttile; hold on; grid on;
 
@@ -93,13 +93,24 @@ for tid = 1:4
     end
 
     if phi(tid)<0
-        title("Normal dist. w/ mean 0 and std. dev. 1", 'Interpreter','tex');
+        title("Std. normal", 'Interpreter','tex');
     else
         title("{\it\phi = " + phi(tid) + "}", 'Interpreter','tex');
     end
     set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold','YScale','Log');
     ylim('padded');
-    yticks(10.^(-16:4:16));
+    yl_tmp = ylim;
+    yl_min = min(yl_min, yl_tmp(1));
+    yl_max = max(yl_max, yl_tmp(2));
+end
+
+for tid = 1:4
+    nexttile(tid);
+    ylim([yl_min, yl_max]);
+    yticks(10.^(-20:4:20));
+    if tid > 1
+        yticklabels([]);
+    end
 end
 
 lgd = legend('Interpreter','tex','FontName','Yu Gothic UI Semibold','IconColumnWidth',15,'NumColumns',2);

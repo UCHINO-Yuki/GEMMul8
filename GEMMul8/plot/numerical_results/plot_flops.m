@@ -5,6 +5,8 @@ arguments (Input)
     GPU_name (1,1) string = "RTX5080"
 end
 
+clc;
+
 FontSize = 8;
 
 %% get data
@@ -40,13 +42,15 @@ end
 
 %% plot
 size_list = [1024 2048 4096 8192 16384 32768];
-fig = figure('Position',[50,50,550,350]);
+fig = figure('Position',[50,50,550,400]);
 for i=length(size_list):-1:1
     if size_list(i)>min(max(m_i8),max(m_f8))
         size_list(i)=[];
     end
 end
-t = tiledlayout(2,ceil(length(size_list)/2));
+t = tiledlayout(2,max(3,ceil(length(size_list)/2)));
+xlims_max = [inf,0];
+i8_f8_ratio = [inf 0];
 for tid = 1:length(size_list)
     m = size_list(tid);
     nexttile; hold on; grid on;
@@ -61,11 +65,19 @@ for tid = 1:length(size_list)
             tflops_DGEMM = tflops;
         end
 
+        idx = contains(func_i8,"Oz1-7") & m_i8 == m;
+        if any(idx)
+            tflops = tflops_i8(idx);
+            k = k_i8(idx);
+            plot(1:length(k),tflops,mark(1,1,2),'DisplayName',"INT8-based Ozaki-I (7 slices)", 'MarkerSize',5, 'LineWidth',1);
+            tflops_i8fast = tflops;
+        end
+
         idx = contains(func_i8,"fast-16") & m_i8 == m;
         if any(idx)
             tflops = tflops_i8(idx);
             k = k_i8(idx);
-            plot(1:length(k),tflops,mark(1,1,2),'DisplayName',"INT8-based Ozaki-II fast (16 moduli)", 'MarkerSize',5, 'LineWidth',1);
+            plot(1:length(k),tflops,mark(1,1,3),'DisplayName',"INT8-based Ozaki-II fast (16 moduli)", 'MarkerSize',5, 'LineWidth',1);
             tflops_i8fast = tflops;
         end
 
@@ -73,7 +85,7 @@ for tid = 1:length(size_list)
         if any(idx)
             tflops = tflops_i8(idx);
             k = k_i8(idx);
-            plot(1:length(k),tflops,mark(1,1,3),'DisplayName',"INT8-based Ozaki-II accu. (15 moduli)", 'MarkerSize',5, 'LineWidth',1);
+            plot(1:length(k),tflops,mark(1,1,4),'DisplayName',"INT8-based Ozaki-II accu. (15 moduli)", 'MarkerSize',5, 'LineWidth',1);
             tflops_i8accu = tflops;
         end
 
@@ -82,8 +94,9 @@ for tid = 1:length(size_list)
         if m==16384
             tflops_i8fast(k==16384),tflops_i8accu(k==16384)
         end
-        % m
-        % i8_dgemm = [tflops_i8fast,tflops_i8accu]./tflops_DGEMM
+        m
+        i8_dgemm = [tflops_i8fast,tflops_i8accu]./tflops_DGEMM
+        [i8_dgemm_min,i8_dgemm_max] = bounds(i8_dgemm,'all')
     end
 
     if ~isempty(dir_name_f8)
@@ -91,7 +104,7 @@ for tid = 1:length(size_list)
         if any(idx)
             tflops = tflops_f8(idx);
             k = k_f8(idx);
-            plot(1:length(k),tflops,mark(1,1,4),'DisplayName',"FP8-based Ozaki-II fast (13 moduli)", 'MarkerSize',5, 'LineWidth',1);
+            plot(1:length(k),tflops,mark(1,1,5),'DisplayName',"FP8-based Ozaki-II fast (13 moduli)", 'MarkerSize',5, 'LineWidth',1);
             tflops_f8fast = tflops;
         end
 
@@ -99,32 +112,34 @@ for tid = 1:length(size_list)
         if any(idx)
             tflops = tflops_f8(idx);
             k = k_f8(idx);
-            plot(1:length(k),tflops,mark(1,1,5),'DisplayName',"FP8-based Ozaki-II accu. (12 moduli)", 'MarkerSize',5, 'LineWidth',1);
+            plot(1:length(k),tflops,mark(1,1,6),'DisplayName',"FP8-based Ozaki-II accu. (12 moduli)", 'MarkerSize',5, 'LineWidth',1);
             tflops_f8accu = tflops;
         end
 
-        % f8_dgemm = [tflops_f8fast,tflops_f8accu]./tflops_DGEMM(1:length(k))
-        % i8_f8 = [tflops_i8fast(1:length(k)),tflops_i8accu(1:length(k)),tflops_i8accu(1:length(k)),tflops_i8fast(1:length(k))]...
-        %     ./[tflops_f8fast,tflops_f8accu,tflops_f8fast,tflops_f8accu];
-        % [i8_f8_min,i8_f8_max] = bounds(i8_f8,'all')
+        f8_dgemm = [tflops_f8fast,tflops_f8accu]./tflops_DGEMM(1:length(k))
+        [f8_dgemm_min,f8_dgemm_max] = bounds(f8_dgemm,'all')
 
-        if m==16384
-            tflops_f8fast(k==16384),tflops_f8accu(k==16384)
-        end
+        i8_f8 = [tflops_i8fast(1:length(k)),tflops_i8accu(1:length(k)),tflops_i8accu(1:length(k)),tflops_i8fast(1:length(k))]...
+            ./[tflops_f8fast,tflops_f8accu,tflops_f8fast,tflops_f8accu];
+        [i8_f8_min,i8_f8_max] = bounds(i8_f8,'all')
+        i8_f8_ratio(1) = min(i8_f8_ratio(1),i8_f8_min);
+        i8_f8_ratio(2) = max(i8_f8_ratio(2),i8_f8_max);
 
-        if length(k) > length(xlims)
-            xlims = k;
-        end
+        xlims_max(1) = min(xlims_max(1), min(k));
+        xlims_max(2) = max(xlims_max(2), max(k));
     end
 
     title("{\itm=n=" + m +"=2^{" + log2(m) + "}}");
     set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
     ylim('padded');
+    xlims = pow2(log2(xlims_max(1)):log2(xlims_max(2)));
     xlim([1 length(xlims)]);
     xticks(1:length(xlims));
     xticklabels("2^{" + log2(xlims) + "}")
     xtickangle(0)
 end
+
+i8_f8_ratio
 
 nexttile(1);
 lgd = legend('Interpreter','tex','FontName','Yu Gothic UI Semibold','IconColumnWidth',15,'NumColumns',2);
