@@ -9,8 +9,8 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
     CHECK_CUDA(cudaSetDevice(0));
     cublasHandle_t handle;
     CHECK_CUBLAS(cublasCreate(&handle));
-    cublasHandle_t handle_Oz;
-    CHECK_CUBLAS(cublasCreate(&handle_Oz));
+    cublasHandle_t handle_Emu;
+    CHECK_CUBLAS(cublasCreate(&handle_Emu));
     cublasLtHandle_t handleLt;
     CHECK_CUBLASLT(cublasLtCreate(&handleLt));
 
@@ -43,7 +43,17 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
     CHECK_CUDA(cudaMalloc(&work, std::max(lwork, size_C * sizeof(accu_t))));
     C_hi = reinterpret_cast<accu_t *>(work);
 
-    ozaki1::setting(handle_Oz, m, n, size_max, 7);
+#if defined(__NVCC__)
+    if (gemmTraits<T>::is_double) {
+    #if CUBLAS_GE_13_1
+        ozaki1::setting(handle_Emu, m, n, size_max, 11, gemmTraits<T>::is_complex);
+    #endif
+    } else {
+    #if CUBLAS_GE_12_9
+        cublasSetMathMode(handle_Emu, CUBLAS_FP32_EMULATED_BF16X9_MATH);
+    #endif
+    }
+#endif
 
     outFile << "phi,k,function,";
     std::cout << "phi,k,function,";
@@ -87,14 +97,15 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                 std::cout << std::endl;
             }
 
-            // Ozaki-1
-            {
-                CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Oz, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+#if defined(__NVCC__)
+            // native gemm3m
+            if constexpr (gemmTraits<T>::is_double && gemmTraits<T>::is_complex) {
+                CHECK_CUBLAS(gemmTraits<T>::gemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                 auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
                 CHECK_CUDA(cudaGetLastError());
                 CHECK_CUDA(cudaDeviceSynchronize());
-                outFile << phi << "," << k << ",OS1-7,";
-                std::cout << phi << "," << k << ",OS1-7,";
+                outFile << phi << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m,";
+                std::cout << phi << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m,";
                 for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
                     outFile << err_max << ",";
                     std::cout << err_max << ",";
@@ -102,12 +113,61 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                 outFile << std::endl;
                 std::cout << std::endl;
             }
+#endif
+
+            // cuBLAS emulation
+#if defined(__NVCC__)
+            {
+                if (gemmTraits<T>::is_double) {
+    #if CUBLAS_GE_13_1
+                    for (int num_slice = 6; num_slice < 12; ++num_slice) {
+                        cublasSetFixedPointEmulationMaxMantissaBitCount(handle_Emu, 8 * num_slice - 1);
+                        CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                        auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
+                        CHECK_CUDA(cudaGetLastError());
+                        CHECK_CUDA(cudaDeviceSynchronize());
+                        outFile << phi << "," << k << ",OS1-" << num_slice << ",";
+                        std::cout << phi << "," << k << ",OS1-" << num_slice << ",";
+                        for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
+                            outFile << err_max << ",";
+                            std::cout << err_max << ",";
+                        }
+                        outFile << std::endl;
+                        std::cout << std::endl;
+                    }
+    #endif
+                } else {
+    #if CUBLAS_GE_12_9
+                    CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
+                    auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
+                    CHECK_CUDA(cudaGetLastError());
+                    CHECK_CUDA(cudaDeviceSynchronize());
+                    outFile << phi << "," << k << ",BF16x9,";
+                    std::cout << phi << "," << k << ",BF16x9,";
+                    for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
+                        outFile << err_max << ",";
+                        std::cout << err_max << ",";
+                    }
+                    outFile << std::endl;
+                    std::cout << std::endl;
+    #endif
+                }
+            }
+#endif
 
             // fast mode
             outFile << phi << "," << k << ",OS2-fast,";
             std::cout << phi << "," << k << ",OS2-fast,";
             for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
-                gemmul8::gemm<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
+#if defined(__NVCC__)
+                gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
+#else
+                if constexpr (backend == gemmul8::Backend::INT8) {
+                    gemmul8::gemm<T, backend>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
+                } else {
+                    gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
+                }
+#endif
                 CHECK_CUDA(cudaGetLastError());
                 CHECK_CUDA(cudaDeviceSynchronize());
                 CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));
@@ -124,7 +184,15 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             outFile << phi << "," << k << ",OS2-accu,";
             std::cout << phi << "," << k << ",OS2-accu,";
             for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
-                gemmul8::gemm<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
+#if defined(__NVCC__)
+                gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
+#else
+                if constexpr (backend == gemmul8::Backend::INT8) {
+                    gemmul8::gemm<T, backend>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
+                } else {
+                    gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
+                }
+#endif
                 CHECK_CUDA(cudaGetLastError());
                 CHECK_CUDA(cudaDeviceSynchronize());
                 CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));
@@ -144,7 +212,7 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
     CHECK_CUDA(cudaFree(C));
     CHECK_CUDA(cudaFree(B));
     CHECK_CUDA(cudaFree(A));
-    CHECK_CUBLAS(cublasDestroy(handle_Oz));
+    CHECK_CUBLAS(cublasDestroy(handle_Emu));
     CHECK_CUBLASLT(cublasLtDestroy(handleLt));
     CHECK_CUBLAS(cublasDestroy(handle));
     outFile.close();

@@ -15,9 +15,9 @@ GPU_MEM_MB ?= auto
 
 ifeq ($(BACKEND),auto)
 ifneq ($(shell command -v nvidia-smi 2>/dev/null),)
-BACKEND := cuda
+override BACKEND := cuda
 else ifneq ($(shell command -v rocminfo 2>/dev/null),)
-BACKEND := hip
+override BACKEND := hip
 else
 $(error Neither NVIDIA (CUDA) nor AMD (ROCm) GPU environment detected!)
 endif
@@ -31,7 +31,7 @@ endif
 ifeq ($(BACKEND),cuda)
 
 ifeq ($(GPU_ARCH),auto)
-GPU_ARCH := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -d '.')
+override GPU_ARCH := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -d '.')
 endif
 
 export PATH := $(CUDA_PATH)/bin:$(PATH)
@@ -52,7 +52,7 @@ endif
 ifeq ($(BACKEND),hip)
 
 ifeq ($(GPU_ARCH),auto)
-GPU_ARCH := $(shell amd-smi static --asic --csv | grep -o 'gfx[0-9]\+' | head -n 1)
+override GPU_ARCH := $(shell amd-smi static --asic --csv | grep -oE 'gfx[0-9]+[a-z]*' | head -n 1)
 endif
 
 export PATH := $(HIP_PATH)/bin:$(PATH)
@@ -61,8 +61,8 @@ export LD_LIBRARY_PATH := $(HIP_PATH)/lib:$(LD_LIBRARY_PATH)
 COMPILER := hipcc
 FLAGS := -std=c++20 -O3
 FLAGS += -ffp-contract=off
-FLAGS += -Wno-unused-result -Wno-unused-command-line-argument
-FLAGS += -DOCML_BASIC_ROUNDED_OPERATIONS
+FLAGS += -Wno-unused-result -Wno-unused-command-line-argument -Wno-unused-value
+FLAGS += -DOCML_BASIC_ROUNDED_OPERATIONS -DGPU_ARCH=$(GPU_ARCH)
 LIBS := -lamd_smi -lamdhip64 -lhipblas -lhipblaslt -ldl
 ARCH := --offload-arch=$(GPU_ARCH)
 

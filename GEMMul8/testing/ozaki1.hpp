@@ -1,5 +1,6 @@
 #pragma once
 
+#if defined(__NVCC__) && CUBLAS_GE_13_1
 namespace ozaki1 {
 
 template <typename T1, typename T2> __forceinline__ T1 ceildiv(T1 n, T2 d) { return (n + d - 1) / d; }
@@ -35,10 +36,10 @@ size_t workSize(
     return (size_t)(std::max(gemm_workspace, adp_workspace) * batchCount * MULTIPLIER) + CONSTANT_SIZE;
 }
 
-void setting(cublasHandle_t cublasH, int m, int n, int k, int num_slice) {
+void setting(cublasHandle_t cublasH, int m, int n, int k, int num_slice, bool isComplex) {
     cudaEmulationMantissaControl_t mControl = CUDA_EMULATION_MANTISSA_CONTROL_FIXED;
     int mantissaBitCount                    = num_slice * 8 - 1;
-    size_t lwork_oz1                        = ozaki1::workSize(m, n, k, 1, false, mControl, mantissaBitCount);
+    size_t lwork_oz1                        = ozaki1::workSize(m, n, k, 1, isComplex, mControl, mantissaBitCount);
     void *dwork_oz1;
     cudaMalloc(reinterpret_cast<void **>(&dwork_oz1), lwork_oz1);
     cublasSetWorkspace(cublasH, dwork_oz1, lwork_oz1);
@@ -49,3 +50,4 @@ void setting(cublasHandle_t cublasH, int m, int n, int k, int num_slice) {
 }
 
 } // namespace ozaki1
+#endif

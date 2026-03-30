@@ -72,11 +72,19 @@
 #endif
 
 #if !defined(GEMM_CALL_ARGS)
-    #define GEMM_CALL_ARGS Handle_t(handle), op_A, op_B, m, n, k,    \
-                           alpha, A, lda, B, ldb, beta, C, ldc,      \
-                           num_moduli, fastmode, work, workA, workB, \
-                           enable_skip_scalA, enable_skip_scalB,     \
+    #define GEMM_CALL_ARGS Handle_t(CublasTag{}, handle), op_A, op_B, m, n, k, \
+                           alpha, A, lda, B, ldb, beta, C, ldc,                \
+                           num_moduli, fastmode, work, workA, workB,           \
+                           enable_skip_scalA, enable_skip_scalB,               \
                            skip_scalA, skip_scalB, stream
+#endif
+
+#if !defined(GEMMLt_CALL_ARGS)
+    #define GEMMLt_CALL_ARGS Handle_t(CublasLtTag{}, handle), op_A, op_B, m, n, k, \
+                             alpha, A, lda, B, ldb, beta, C, ldc,                  \
+                             num_moduli, fastmode, work, workA, workB,             \
+                             enable_skip_scalA, enable_skip_scalB,                 \
+                             skip_scalA, skip_scalB, stream
 #endif
 
 namespace gemmul8 {
@@ -133,17 +141,19 @@ template <> std::vector<double> gemm<cuDoubleComplex, Backend::INT8>(GEMM_ARGS(c
 //------------------------------
 // GEMM emulation using INT8 Tensor Cores (cuBLASLt)
 //------------------------------
-template <> std::vector<double> gemm<double, Backend::INT8>(GEMMLt_ARGS(double)) { return real::gemm<double, Backend::INT8>(GEMM_CALL_ARGS); }
-template <> std::vector<double> gemm<float, Backend::INT8>(GEMMLt_ARGS(float)) { return real::gemm<float, Backend::INT8>(GEMM_CALL_ARGS); }
-template <> std::vector<double> gemm<cuFloatComplex, Backend::INT8>(GEMMLt_ARGS(cuFloatComplex)) { return complex::gemm<cuFloatComplex, Backend::INT8>(GEMM_CALL_ARGS); }
-template <> std::vector<double> gemm<cuDoubleComplex, Backend::INT8>(GEMMLt_ARGS(cuDoubleComplex)) { return complex::gemm<cuDoubleComplex, Backend::INT8>(GEMM_CALL_ARGS); }
+#if defined(__NVCC__)
+template <> std::vector<double> gemmLt<double, Backend::INT8>(GEMMLt_ARGS(double)) { return real::gemm<double, Backend::INT8>(GEMMLt_CALL_ARGS); }
+template <> std::vector<double> gemmLt<float, Backend::INT8>(GEMMLt_ARGS(float)) { return real::gemm<float, Backend::INT8>(GEMMLt_CALL_ARGS); }
+template <> std::vector<double> gemmLt<cuFloatComplex, Backend::INT8>(GEMMLt_ARGS(cuFloatComplex)) { return complex::gemm<cuFloatComplex, Backend::INT8>(GEMMLt_CALL_ARGS); }
+template <> std::vector<double> gemmLt<cuDoubleComplex, Backend::INT8>(GEMMLt_ARGS(cuDoubleComplex)) { return complex::gemm<cuDoubleComplex, Backend::INT8>(GEMMLt_CALL_ARGS); }
+#endif
 
 //------------------------------
 // GEMM emulation using FP8 Tensor Cores (cuBLASLt)
 //------------------------------
-template <> std::vector<double> gemm<double, Backend::FP8>(GEMMLt_ARGS(double)) { return real::gemm<double, Backend::FP8>(GEMM_CALL_ARGS); }
-template <> std::vector<double> gemm<float, Backend::FP8>(GEMMLt_ARGS(float)) { return real::gemm<float, Backend::FP8>(GEMM_CALL_ARGS); }
-template <> std::vector<double> gemm<cuFloatComplex, Backend::FP8>(GEMMLt_ARGS(cuFloatComplex)) { return complex::gemm<cuFloatComplex, Backend::FP8>(GEMM_CALL_ARGS); }
-template <> std::vector<double> gemm<cuDoubleComplex, Backend::FP8>(GEMMLt_ARGS(cuDoubleComplex)) { return complex::gemm<cuDoubleComplex, Backend::FP8>(GEMM_CALL_ARGS); }
+template <> std::vector<double> gemmLt<double, Backend::FP8>(GEMMLt_ARGS(double)) { return real::gemm<double, Backend::FP8>(GEMMLt_CALL_ARGS); }
+template <> std::vector<double> gemmLt<float, Backend::FP8>(GEMMLt_ARGS(float)) { return real::gemm<float, Backend::FP8>(GEMMLt_CALL_ARGS); }
+template <> std::vector<double> gemmLt<cuFloatComplex, Backend::FP8>(GEMMLt_ARGS(cuFloatComplex)) { return complex::gemm<cuFloatComplex, Backend::FP8>(GEMMLt_CALL_ARGS); }
+template <> std::vector<double> gemmLt<cuDoubleComplex, Backend::FP8>(GEMMLt_ARGS(cuDoubleComplex)) { return complex::gemm<cuDoubleComplex, Backend::FP8>(GEMMLt_CALL_ARGS); }
 
 } // namespace gemmul8

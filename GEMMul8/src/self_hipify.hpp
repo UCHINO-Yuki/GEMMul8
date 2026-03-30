@@ -15,21 +15,26 @@
     // cuBLAS
     #if defined(HIPBLAS_V2)
         #define cublasGemmEx   hipblasGemmEx
+        #define cublasCgemm    hipblasCgemm
+        #define cublasZgemm    hipblasZgemm
         #define cublasCgemm_v2 hipblasCgemm
         #define cublasZgemm_v2 hipblasZgemm
     #else
         #define cublasGemmEx   hipblasGemmEx_v2
+        #define cublasCgemm    hipblasCgemm_v2
+        #define cublasZgemm    hipblasZgemm_v2
         #define cublasCgemm_v2 hipblasCgemm_v2
         #define cublasZgemm_v2 hipblasZgemm_v2
     #endif
+    #define cublasSgemm                    hipblasSgemm
     #define cublasSgemm_v2                 hipblasSgemm
+    #define cublasDgemm                    hipblasDgemm
     #define cublasDgemm_v2                 hipblasDgemm
     #define cublasGetStream                hipblasGetStream
     #define cublasGetStream_v2             hipblasGetStream
     #define CUBLAS_OP_N                    HIPBLAS_OP_N
     #define CUBLAS_OP_T                    HIPBLAS_OP_T
     #define CUBLAS_OP_C                    HIPBLAS_OP_C
-    #define CUDA_R_8F_E4M3                 HIP_R_8F_E4M3
     #define CUDA_R_8I                      HIP_R_8I
     #define CUDA_R_32I                     HIP_R_32I
     #define CUDA_R_32F                     HIP_R_32F
@@ -56,6 +61,26 @@
     #define CUBLAS_STATUS_NOT_SUPPORTED    HIPBLAS_STATUS_NOT_SUPPORTED
     #define CUBLAS_STATUS_ALLOC_FAILED     HIPBLAS_STATUS_ALLOC_FAILED
     #define CUBLAS_STATUS_NOT_INITIALIZED  HIPBLAS_STATUS_NOT_INITIALIZED
+    #define cublasSetWorkspace             hipblasSetWorkspace
+
+    #define GPU_ARCH_ID_gfx940  940
+    #define GPU_ARCH_ID_gfx941  941
+    #define GPU_ARCH_ID_gfx942  942
+    #define GPU_ARCH_ID_IMPL(x) GPU_ARCH_ID_##x
+    #define GPU_ARCH_ID(x)      GPU_ARCH_ID_IMPL(x)
+    #if defined(GPU_ARCH) && (GPU_ARCH_ID(GPU_ARCH) == 940 || GPU_ARCH_ID(GPU_ARCH) == 941 || GPU_ARCH_ID(GPU_ARCH) == 942)
+        #define CUDA_R_8F_E4M3  HIP_R_8F_E4M3_FNUZ
+        #define __nv_fp8_e4m3   __hip_fp8_e4m3_fnuz
+        #define __nv_fp8x2_e4m3 __hip_fp8x2_e4m3_fnuz
+        #define __nv_fp8x4_e4m3 __hip_fp8x4_e4m3_fnuz
+        #define __NV_E4M3       __HIP_E4M3_FNUZ
+    #else
+        #define CUDA_R_8F_E4M3  HIP_R_8F_E4M3
+        #define __nv_fp8_e4m3   __hip_fp8_e4m3
+        #define __nv_fp8x2_e4m3 __hip_fp8x2_e4m3
+        #define __nv_fp8x4_e4m3 __hip_fp8x4_e4m3
+        #define __NV_E4M3       __HIP_E4M3
+    #endif
 
     // cuBLASLt
     #define cublasLtCreate                           hipblasLtCreate
@@ -80,13 +105,10 @@
     #define cublasLtMatmulDescDestroy                hipblasLtMatmulDescDestroy
 
     // CUDA
-    #define __nv_fp8_e4m3              __hip_fp8_e4m3_fnuz
-    #define __nv_fp8x2_e4m3            __hip_fp8x2_e4m3_fnuz
-    #define __nv_fp8x4_e4m3            __hip_fp8x4_e4m3_fnuz
     #define __nv_fp8_storage_t         __hip_fp8_storage_t
+    #define __nv_fp8x4_storage_t       __hip_fp8x4_storage_t
     #define __nv_cvt_float_to_fp8      __hip_cvt_float_to_fp8
     #define __NV_SATFINITE             __HIP_SATFINITE
-    #define __NV_E4M3                  __HIP_E4M3_FNUZ
     #define cudaDeviceSynchronize      hipDeviceSynchronize
     #define cudaStreamSynchronize      hipStreamSynchronize
     #define cudaDeviceProp             hipDeviceProp_t
@@ -100,6 +122,7 @@
     #define cudaFreeAsync              hipFreeAsync
     #define cudaError_t                hipError_t
     #define cudaSuccess                hipSuccess
+    #define cudaDataType_t             hipblasDatatype_t
     #define cudaDataType               hipDataType
     #define cudaGetErrorString         hipGetErrorString
     #define cudaStream_t               hipStream_t
@@ -123,6 +146,7 @@
     #define cudaGetLastError           hipGetLastError
     #define cudaEventSynchronize       hipEventSynchronize
     #define cudaEventElapsedTime       hipEventElapsedTime
+    #define cudaDeviceReset            hipDeviceReset
 
     #define cudaMemcpyToSymbol(symbol, src, count)                            hipMemcpyToSymbol(HIP_SYMBOL(symbol), src, count)
     #define cudaMemcpyToSymbolAsync(symbol, src, count, offset, kind, stream) hipMemcpyToSymbolAsync(HIP_SYMBOL(symbol), src, count, offset, kind, stream)

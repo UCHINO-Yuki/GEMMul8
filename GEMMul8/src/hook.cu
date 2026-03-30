@@ -568,7 +568,7 @@ template <typename T> static inline cublasStatus_t call_gemmul8_gemm(
     cublasStatus_t st_lt = ensure_lt_handle_locked(hst, &lt);
     if (st_lt != CUBLAS_STATUS_SUCCESS) return st_lt;
 
-    (void)gemmul8::gemm<T, gemmul8::Backend::FP8>(
+    (void)gemmul8::gemmLt<T, gemmul8::Backend::FP8>(
         lt,
         transa, transb,
         static_cast<size_t>(m), static_cast<size_t>(n), static_cast<size_t>(k),

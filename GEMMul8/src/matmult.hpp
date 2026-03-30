@@ -5,6 +5,9 @@ enum class HandleKind : unsigned char {
     cuBLASLt
 };
 
+struct CublasTag {};
+struct CublasLtTag {};
+
 struct Handle_t {
     HandleKind kind;
     cublasHandle_t cublas{};
@@ -23,13 +26,15 @@ struct Handle_t {
 
     cublasLtMatmulHeuristicResult_t heur_blk{};
     cublasLtMatmulHeuristicResult_t heur_tail{};
-    int got_blk  = 0;
-    int got_tail = 0;
-    int nn_blk   = 0;
-    int nn_tail  = 0;
+    int got_blk    = 0;
+    int got_tail   = 0;
+    int nn_blk     = 0;
+    int nn_tail    = 0;
+    size_t ws_blk  = 0;
+    size_t ws_tail = 0;
 
-    Handle_t(cublasHandle_t h) : kind(HandleKind::cuBLAS), cublas(h) {}
-    Handle_t(cublasLtHandle_t h) : kind(HandleKind::cuBLASLt), cublasLt(h) {}
+    Handle_t(CublasTag, cublasHandle_t h) : kind(HandleKind::cuBLAS), cublas(h) {}
+    Handle_t(CublasLtTag, cublasLtHandle_t h) : kind(HandleKind::cuBLASLt), cublasLt(h) {}
 };
 
 template <gemmul8::Backend backend>
@@ -39,11 +44,11 @@ inline void set_handle(
     size_t lda, size_t ldb, size_t ldc,
     void *workspace, size_t workspaceSizeInBytes //
 ) {
-    const cudaDataType_t CUDA_R_LOW               = (backend == gemmul8::Backend::INT8) ? CUDA_R_8I : CUDA_R_8F_E4M3;
-    const cudaDataType_t CUDA_R_HIGH              = (backend == gemmul8::Backend::INT8) ? CUDA_R_32I : CUDA_R_32F;
-    const cublasComputeType_t CUBLAS_COMPUTE_TYPE = (backend == gemmul8::Backend::INT8) ? CUBLAS_COMPUTE_32I : CUBLAS_COMPUTE_32F;
-    const cublasOperation_t transa                = CUBLAS_OP_T;
-    const cublasOperation_t transb                = CUBLAS_OP_N;
+    const auto CUDA_R_LOW          = (backend == gemmul8::Backend::INT8) ? CUDA_R_8I : CUDA_R_8F_E4M3;
+    const auto CUDA_R_HIGH         = (backend == gemmul8::Backend::INT8) ? CUDA_R_32I : CUDA_R_32F;
+    const auto CUBLAS_COMPUTE_TYPE = (backend == gemmul8::Backend::INT8) ? CUBLAS_COMPUTE_32I : CUBLAS_COMPUTE_32F;
+    const cublasOperation_t transa = CUBLAS_OP_T;
+    const cublasOperation_t transb = CUBLAS_OP_N;
 
     h.workspace            = workspace;
     h.workspaceSizeInBytes = workspaceSizeInBytes;
@@ -82,6 +87,7 @@ inline void set_handle(
                 h.Adesc, h.Bdesc_blk, h.Cdesc_blk, h.Cdesc_blk,
                 h.pref, 1, &h.heur_blk, &returned);
             h.got_blk = returned;
+            h.ws_blk  = (returned > 0) ? h.heur_blk.workspaceSize : 0;
         }
         {
             int returned = 0;
@@ -90,6 +96,7 @@ inline void set_handle(
                 h.Adesc, h.Bdesc_tail, h.Cdesc_tail, h.Cdesc_tail,
                 h.pref, 1, &h.heur_tail, &returned);
             h.got_tail = returned;
+            h.ws_tail  = (returned > 0) ? h.heur_tail.workspaceSize : 0;
         }
     }
 }
@@ -153,12 +160,13 @@ inline void gemm_low_prec_i8x1(
             auto Bdesc        = is_blk ? handle.Bdesc_blk : handle.Bdesc_tail;
             auto Cdesc        = is_blk ? handle.Cdesc_blk : handle.Cdesc_tail;
             auto heur         = is_blk ? &handle.heur_blk : &handle.heur_tail;
+            const size_t ws   = is_blk ? handle.ws_blk : handle.ws_tail;
 
             cublasLtMatmul(
                 handle.cublasLt, handle.opDesc,
                 alpha, A, handle.Adesc, B + offset * ldb, Bdesc,
                 beta, C + offset * ldc, Cdesc, C + offset * ldc, Cdesc,
-                &heur->algo, handle.workspace, handle.workspaceSizeInBytes, stream);
+                &heur->algo, handle.workspace, ws, stream);
 
             offset += nn;
             rem -= nn;
@@ -186,12 +194,13 @@ inline void gemm_low_prec_f8x1(
         auto Bdesc        = is_blk ? handle.Bdesc_blk : handle.Bdesc_tail;
         auto Cdesc        = is_blk ? handle.Cdesc_blk : handle.Cdesc_tail;
         auto heur         = is_blk ? &handle.heur_blk : &handle.heur_tail;
+        const size_t ws   = is_blk ? handle.ws_blk : handle.ws_tail;
 
         cublasLtMatmul(
             handle.cublasLt, handle.opDesc,
             alpha, A, handle.Adesc, B + offset * ldb, Bdesc,
             beta, C + offset * ldc, Cdesc, C + offset * ldc, Cdesc,
-            &heur->algo, handle.workspace, handle.workspaceSizeInBytes, stream);
+            &heur->algo, handle.workspace, ws, stream);
 
         offset += nn;
         rem -= nn;
@@ -266,24 +275,25 @@ inline void gemm_low_prec_i8x3(
             auto Bdesc        = is_blk ? handle.Bdesc_blk : handle.Bdesc_tail;
             auto Cdesc        = is_blk ? handle.Cdesc_blk : handle.Cdesc_tail;
             auto heur         = is_blk ? &handle.heur_blk : &handle.heur_tail;
+            const size_t ws   = is_blk ? handle.ws_blk : handle.ws_tail;
 
             cublasLtMatmul(
                 handle.cublasLt, handle.opDesc,
                 alpha1, A1, handle.Adesc, B1 + offset * ldb, Bdesc,
                 beta1, C1 + offset * ldc, Cdesc, C1 + offset * ldc, Cdesc,
-                &heur->algo, handle.workspace, handle.workspaceSizeInBytes, stream);
+                &heur->algo, handle.workspace, ws, stream);
 
             cublasLtMatmul(
                 handle.cublasLt, handle.opDesc,
                 alpha2, A2, handle.Adesc, B2 + offset * ldb, Bdesc,
                 beta2, C2 + offset * ldc, Cdesc, C2 + offset * ldc, Cdesc,
-                &heur->algo, handle.workspace, handle.workspaceSizeInBytes, stream);
+                &heur->algo, handle.workspace, ws, stream);
 
             cublasLtMatmul(
                 handle.cublasLt, handle.opDesc,
                 alpha3, A3, handle.Adesc, B3 + offset * ldb, Bdesc,
                 beta3, C3 + offset * ldc, Cdesc, C3 + offset * ldc, Cdesc,
-                &heur->algo, handle.workspace, handle.workspaceSizeInBytes, stream);
+                &heur->algo, handle.workspace, ws, stream);
 
             offset += nn;
             rem -= nn;
@@ -314,24 +324,25 @@ inline void gemm_low_prec_f8x3(
         auto Bdesc        = is_blk ? handle.Bdesc_blk : handle.Bdesc_tail;
         auto Cdesc        = is_blk ? handle.Cdesc_blk : handle.Cdesc_tail;
         auto heur         = is_blk ? &handle.heur_blk : &handle.heur_tail;
+        const size_t ws   = is_blk ? handle.ws_blk : handle.ws_tail;
 
         cublasLtMatmul(
             handle.cublasLt, handle.opDesc,
             alpha1, A1, handle.Adesc, B1 + offset * ldb, Bdesc,
             beta1, C1 + offset * ldc, Cdesc, C1 + offset * ldc, Cdesc,
-            &heur->algo, handle.workspace, handle.workspaceSizeInBytes, stream);
+            &heur->algo, handle.workspace, ws, stream);
 
         cublasLtMatmul(
             handle.cublasLt, handle.opDesc,
             alpha2, A2, handle.Adesc, B2 + offset * ldb, Bdesc,
             beta2, C2 + offset * ldc, Cdesc, C2 + offset * ldc, Cdesc,
-            &heur->algo, handle.workspace, handle.workspaceSizeInBytes, stream);
+            &heur->algo, handle.workspace, ws, stream);
 
         cublasLtMatmul(
             handle.cublasLt, handle.opDesc,
             alpha3, A3, handle.Adesc, B3 + offset * ldb, Bdesc,
             beta3, C3 + offset * ldc, Cdesc, C3 + offset * ldc, Cdesc,
-            &heur->algo, handle.workspace, handle.workspaceSizeInBytes, stream);
+            &heur->algo, handle.workspace, ws, stream);
 
         offset += nn;
         rem -= nn;
@@ -361,6 +372,7 @@ inline void gemm_low_prec_f8x9(
         auto Bdesc        = is_blk ? handle.Bdesc_blk : handle.Bdesc_tail;
         auto Cdesc        = is_blk ? handle.Cdesc_blk : handle.Cdesc_tail;
         auto heur         = is_blk ? &handle.heur_blk : &handle.heur_tail;
+        const size_t ws   = is_blk ? handle.ws_blk : handle.ws_tail;
 
 #pragma unroll
         for (int i = 0; i < 9; ++i) {
@@ -368,7 +380,7 @@ inline void gemm_low_prec_f8x9(
                 handle.cublasLt, handle.opDesc,
                 alpha, A[i], handle.Adesc, B[i] + offset * ldb, Bdesc,
                 beta, C[i] + offset * ldc, Cdesc, C[i] + offset * ldc, Cdesc,
-                &heur->algo, handle.workspace, handle.workspaceSizeInBytes, stream);
+                &heur->algo, handle.workspace, ws, stream);
         }
 
         offset += nn;

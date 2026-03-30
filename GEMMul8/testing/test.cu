@@ -16,6 +16,31 @@
 #include "eval.hpp"
 #include "make_matrix.hpp"
 
+#if defined(__NVCC__)
+    #if defined(CUBLAS_VER_MAJOR) && defined(CUBLAS_VER_MINOR)
+        #if (CUBLAS_VER_MAJOR > 13) || \
+            (CUBLAS_VER_MAJOR == 13 && CUBLAS_VER_MINOR >= 1)
+            #define CUBLAS_GE_13_1 1
+        #else
+            #define CUBLAS_GE_13_1 0
+        #endif
+    #else
+        #define CUBLAS_GE_13_1 0
+    #endif
+    
+    #if defined(CUBLAS_VER_MAJOR) && defined(CUBLAS_VER_MINOR)
+        #if (CUBLAS_VER_MAJOR > 12) || \
+            (CUBLAS_VER_MAJOR == 12 && CUBLAS_VER_MINOR >= 9)
+            #define CUBLAS_GE_12_9 1
+        #else
+            #define CUBLAS_GE_12_9 0
+        #endif
+    #else
+        #define CUBLAS_GE_12_9 0
+    #endif
+#endif
+
+#include "ozaki1.hpp"
 #include "common.hpp"
 #include "test_accuracy.hpp"
 #include "test_flops.hpp"
@@ -88,7 +113,7 @@ int main(int argc, char **argv) {
             if (run_watt) watt_check<cuDoubleComplex, gemmul8::Backend::INT8>(deviceName, startTime);
         }
     }
-    
+
     if (run_FP8) {
         if (run_SGEMM) {
             if (run_accuracy) accuracy_check<float, gemmul8::Backend::FP8>(deviceName, startTime);

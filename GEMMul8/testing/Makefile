@@ -15,9 +15,9 @@ GPU_MEM_MB ?= auto
 
 ifeq ($(BACKEND),auto)
 ifneq ($(shell command -v nvidia-smi 2>/dev/null),)
-BACKEND := cuda
+override BACKEND := cuda
 else ifneq ($(shell command -v rocminfo 2>/dev/null),)
-BACKEND := hip
+override BACKEND := hip
 else
 $(error Neither NVIDIA (CUDA) nor AMD (ROCm) GPU environment detected!)
 endif
@@ -31,11 +31,11 @@ endif
 ifeq ($(BACKEND),cuda)
 
 ifeq ($(GPU_ARCH),auto)
-GPU_ARCH := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -d '.')
+override GPU_ARCH := $(shell nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -n 1 | tr -d '.')
 endif
 
 ifeq ($(GPU_MEM_MB),auto)
-GPU_MEM_MB := $(shell nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)
+override GPU_MEM_MB := $(shell nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)
 endif
 
 export PATH := $(CUDA_PATH)/bin:$(PATH)
@@ -57,21 +57,21 @@ endif
 ifeq ($(BACKEND),hip)
 
 ifeq ($(GPU_ARCH),auto)
-GPU_ARCH := $(shell amd-smi static --asic --csv | grep -o 'gfx[0-9]\+' | head -n 1)
+override GPU_ARCH := $(shell amd-smi static --asic --csv | grep -oE 'gfx[0-9]+[a-z]*' | head -n 1)
 endif
 
 export PATH := $(HIP_PATH)/bin:$(PATH)
 export LD_LIBRARY_PATH := $(HIP_PATH)/lib:$(LD_LIBRARY_PATH)
 
 ifeq ($(GPU_MEM_MB),auto)
-GPU_MEM_MB := $(shell amd-smi static --vram --csv | awk -F, "NR==2 {print \$$4}")
+override GPU_MEM_MB := $(shell amd-smi static --vram --csv | awk -F, "NR==2 {print \$$4}")
 endif
 
 COMPILER := hipcc
 LIBS := -lamd_smi -lamdhip64 -lhipblas -lhipblaslt -ldl -Wl,../lib/libgemmul8.a
 FLAGS := -std=c++20 -O3 -I../include
 FLAGS += -ffp-contract=off
-FLAGS += -Wno-unused-result -Wno-unused-command-line-argument
+FLAGS += -Wno-unused-result -Wno-unused-command-line-argument -Wno-unused-value
 FLAGS += -DOCML_BASIC_ROUNDED_OPERATIONS
 FLAGS += -DGPU_MEM_MB=$(GPU_MEM_MB)
 ARCH := --offload-arch=$(GPU_ARCH)
