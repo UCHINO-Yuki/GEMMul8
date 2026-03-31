@@ -61,6 +61,8 @@
     #define CUBLAS_STATUS_NOT_SUPPORTED    HIPBLAS_STATUS_NOT_SUPPORTED
     #define CUBLAS_STATUS_ALLOC_FAILED     HIPBLAS_STATUS_ALLOC_FAILED
     #define CUBLAS_STATUS_NOT_INITIALIZED  HIPBLAS_STATUS_NOT_INITIALIZED
+    #define CUBLAS_POINTER_MODE_HOST       HIPBLAS_POINTER_MODE_HOST
+    #define cublasSetPointerMode           hipblasSetPointerMode
     #define cublasSetWorkspace             hipblasSetWorkspace
 
     #define GPU_ARCH_ID_gfx940  940

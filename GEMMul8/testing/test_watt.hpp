@@ -9,6 +9,7 @@ __inline__ void watt_check(std::string &deviceName, std::string &dateTime) {
     CHECK_CUDA(cudaSetDevice(0));
     cublasHandle_t handle;
     CHECK_CUBLAS(cublasCreate(&handle));
+    CHECK_CUBLAS(cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST));
     cublasHandle_t handle_Emu;
     CHECK_CUBLAS(cublasCreate(&handle_Emu));
     cublasLtHandle_t handleLt;
@@ -86,6 +87,8 @@ __inline__ void watt_check(std::string &deviceName, std::string &dateTime) {
                 [&]() { CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi)); },
                 m, n, k);
 
+            outFile << std::scientific;
+            std::cout << std::scientific;
             outFile << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM" << ",";
             outFile << res[0] << "," << ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) * res[1] * 1.e-9 << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM" << ",";
@@ -105,6 +108,8 @@ __inline__ void watt_check(std::string &deviceName, std::string &dateTime) {
                 [&]() { CHECK_CUBLAS(gemmTraits<T>::gemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi)); },
                 m, n, k);
 
+            outFile << std::scientific;
+            std::cout << std::scientific;
             outFile << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m" << ",";
             outFile << res[0] << "," << ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) * res[1] * 1.e-9 << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m" << ",";
@@ -145,6 +150,8 @@ __inline__ void watt_check(std::string &deviceName, std::string &dateTime) {
                 },
                 m, n, k);
 
+            outFile << std::scientific;
+            std::cout << std::scientific;
             outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
             outFile << res[0] << "," << ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) * res[1] * 1.e-9 << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
@@ -184,6 +191,8 @@ __inline__ void watt_check(std::string &deviceName, std::string &dateTime) {
                 },
                 m, n, k);
 
+            outFile << std::scientific;
+            std::cout << std::scientific;
             outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
             outFile << res[0] << "," << ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) * res[1] * 1.e-9 << "," << std::endl;
             std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
@@ -212,6 +221,8 @@ __inline__ void watt_check(std::string &deviceName, std::string &dateTime) {
                         [&]() { CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi)); },
                         m, n, k);
 
+                    outFile << std::scientific;
+                    std::cout << std::scientific;
                     outFile << phi << "," << m << "," << n << "," << k << "," << "Oz1-" << num_slice << ",";
                     outFile << res[0] << "," << ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) * res[1] * 1.e-9 << "," << std::endl;
                     std::cout << phi << "," << m << "," << n << "," << k << "," << "Oz1-" << num_slice << ",";
@@ -236,6 +247,8 @@ __inline__ void watt_check(std::string &deviceName, std::string &dateTime) {
                     [&]() { CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi)); },
                     m, n, k);
 
+                outFile << std::scientific;
+                std::cout << std::scientific;
                 outFile << phi << "," << m << "," << n << "," << k << "," << "BF16x9" << ",";
                 outFile << res[0] << "," << ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) * res[1] * 1.e-9 << "," << std::endl;
                 std::cout << phi << "," << m << "," << n << "," << k << "," << "BF16x9" << ",";

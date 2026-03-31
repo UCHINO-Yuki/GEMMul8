@@ -18,7 +18,7 @@ ifneq ($(shell command -v nvidia-smi 2>/dev/null),)
 override BACKEND := cuda
 else ifneq ($(shell command -v rocminfo 2>/dev/null),)
 override BACKEND := hip
-else
+else ifneq ($(MAKECMDGOALS),clean)
 $(error Neither NVIDIA (CUDA) nor AMD (ROCm) GPU environment detected!)
 endif
 endif
@@ -80,7 +80,8 @@ CUDA_PATH=$(CUDA_PATH) \
 HIP_PATH=$(HIP_PATH) \
 BACKEND=$(BACKEND) \
 GPU_ARCH=$(GPU_ARCH) \
-GPU_MEM_MB=$(GPU_MEM_MB)
+GPU_MEM_MB=$(GPU_MEM_MB) \
+INFO_FLAG=no
 
 
 #===============
@@ -102,7 +103,21 @@ SHARED_LIB := lib/libgemmul8.so
 
 .PHONY: all clean testing
 
-all: $(STATIC_LIB) $(SHARED_LIB) testing
+all: INFO $(STATIC_LIB) $(SHARED_LIB) testing
+
+INFO:
+	$(info )
+	$(info BACKEND      : $(BACKEND))
+ifeq ($(BACKEND),cuda)
+	$(info CUDA_PATH    : $(CUDA_PATH))
+endif
+ifeq ($(BACKEND),hip)
+	$(info HIP_PATH     : $(HIP_PATH))
+endif
+	$(info COMPILER     : $(COMPILER))
+	$(info GPU_ARCH     : $(GPU_ARCH))
+	$(info GPU_MEM_MB   : $(GPU_MEM_MB))
+	$(info )
 
 
 #===============
@@ -136,6 +151,9 @@ $(SHARED_LIB): $(CU_OBJ) $(HOOK_OBJ)
 #===============
 
 testing: $(STATIC_LIB)
+	@echo 
+	@echo "Proceeding to compile the test programs."
+	@echo 
 	$(MAKE) -C testing $(MAKE_FLAGS)
 
 

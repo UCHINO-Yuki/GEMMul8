@@ -12,7 +12,7 @@ void disp_mat(int m, int n, double *Mat) {
 }
 
 int main(int argc, char **argv) {
-    const gemmul8::Backend backend = gemmul8::Backend::INT8;
+    const gemmul8::Backend backend = gemmul8::Backend::FP8;
     const unsigned num_moduli      = 13;
     const bool fastmode            = false;
     const bool is_complex          = false;

@@ -7,6 +7,7 @@ HIP_PATH ?= /opt/rocm
 BACKEND ?= auto
 GPU_ARCH ?= auto
 GPU_MEM_MB ?= auto
+INFO_FLAG ?= yes
 
 
 #===============
@@ -18,8 +19,10 @@ ifneq ($(shell command -v nvidia-smi 2>/dev/null),)
 override BACKEND := cuda
 else ifneq ($(shell command -v rocminfo 2>/dev/null),)
 override BACKEND := hip
-else
+else ifneq ($(MAKECMDGOALS),clean)
+ifneq ($(MAKECMDGOALS),run)
 $(error Neither NVIDIA (CUDA) nor AMD (ROCm) GPU environment detected!)
+endif
 endif
 endif
 
@@ -36,6 +39,13 @@ endif
 
 ifeq ($(GPU_MEM_MB),auto)
 override GPU_MEM_MB := $(shell nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1)
+ifneq ($(MAKECMDGOALS),clean)
+ifneq ($(MAKECMDGOALS),run)
+ifeq ($(shell echo "$(GPU_MEM_MB)" | grep -E '^[0-9]+$$'),)
+$(error GPU_MEM_MB could not be detected)
+endif
+endif
+endif
 endif
 
 export PATH := $(CUDA_PATH)/bin:$(PATH)
@@ -65,6 +75,13 @@ export LD_LIBRARY_PATH := $(HIP_PATH)/lib:$(LD_LIBRARY_PATH)
 
 ifeq ($(GPU_MEM_MB),auto)
 override GPU_MEM_MB := $(shell amd-smi static --vram --csv | awk -F, "NR==2 {print \$$4}")
+ifneq ($(MAKECMDGOALS),clean)
+ifneq ($(MAKECMDGOALS),run)
+ifeq ($(shell echo "$(GPU_MEM_MB)" | grep -E '^[0-9]+$$'),)
+$(error GPU_MEM_MB could not be detected)
+endif
+endif
+endif
 endif
 
 COMPILER := hipcc
@@ -88,6 +105,7 @@ TARGET := test
 all: INFO VERSION $(TARGET)
 
 INFO:
+ifeq ($(INFO_FLAG),yes)
 	$(info BACKEND      : $(BACKEND))
 ifeq ($(BACKEND),cuda)
 	$(info CUDA_PATH    : $(CUDA_PATH))
@@ -95,9 +113,11 @@ endif
 ifeq ($(BACKEND),hip)
 	$(info HIP_PATH     : $(HIP_PATH))
 endif
-	$(info GPU_ARCH     : $(GPU_ARCH))
 	$(info COMPILER     : $(COMPILER))
-	$(info GPU_MEM [MB] : $(GPU_MEM_MB))
+	$(info GPU_ARCH     : $(GPU_ARCH))
+	$(info GPU_MEM_MB   : $(GPU_MEM_MB))
+	$(info )
+endif
 
 $(TARGET): $(TARGET).cu
 	$(COMPILER) $< $(FLAGS) $(ARCH) -o $@ $(LIBS)
