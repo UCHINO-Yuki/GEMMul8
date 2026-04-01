@@ -61,7 +61,7 @@ COMPILER := hipcc
 LIBS := -lamd_smi -lamdhip64 -lhipblas -lhipblaslt -ldl -Wl,../lib/libgemmul8.a
 FLAGS := -std=c++20 -O3
 FLAGS += -ffp-contract=off
-FLAGS += -Wno-unused-result -Wno-unused-command-line-argument
+FLAGS += -Wno-unused-result -Wno-unused-command-line-argument -Wno-unused-value
 FLAGS += -DOCML_BASIC_ROUNDED_OPERATIONS
 ARCH := --offload-arch=$(GPU_ARCH)
 
@@ -73,7 +73,12 @@ endif
 #===============
 
 TARGET1 := dgemm_cuBLAS_int8
+ifeq ($(BACKEND),cuda)
 TARGET2 := dgemm_cuBLASLt_int8
+endif
+ifeq ($(BACKEND),hip)
+TARGET2 := 
+endif
 TARGET3 := dgemm_cuBLASLt_fp8
 
 all: INFO VERSION $(TARGET1) $(TARGET2) $(TARGET3)

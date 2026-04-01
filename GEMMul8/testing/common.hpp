@@ -45,7 +45,11 @@ inline constexpr size_t size_max                                      = 65536;
 
 std::string getDeviceName() {
     cudaDeviceProp deviceProp;
-    CHECK_CUDA(cudaGetDeviceProperties(&deviceProp, 0));
+    auto e = cudaGetDeviceProperties(&deviceProp, 0);
+    if (e != cudaSuccess) {
+        std::string deviceName = "UnknownGPU";
+        return deviceName;
+    }
     std::string deviceName = deviceProp.name;
     for (char &c : deviceName) {
         if (c == ' ' || c == '/' || c == '\\') c = '_';
@@ -107,9 +111,11 @@ template <> struct gemmTraits<cuFloatComplex> {
 };
 
 template <> struct gemmTraits<cuDoubleComplex> {
-    static constexpr char prefix     = 'z';
-    static constexpr auto gemm       = &cublasZgemm;
-    static constexpr auto gemm3m     = &cublasZgemm3m;
+    static constexpr char prefix = 'z';
+    static constexpr auto gemm   = &cublasZgemm;
+#if defined(__NVCC__)
+    static constexpr auto gemm3m = &cublasZgemm3m;
+#endif
     static constexpr bool is_complex = true;
     static constexpr bool is_double  = true;
     using ACCU_TYPE                  = eval::dd::double2_complex;

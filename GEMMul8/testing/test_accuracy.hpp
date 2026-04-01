@@ -9,13 +9,11 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
     CHECK_CUDA(cudaSetDevice(0));
     cublasHandle_t handle;
     CHECK_CUBLAS(cublasCreate(&handle));
+    CHECK_CUBLAS(cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST));
     cublasHandle_t handle_Emu;
     CHECK_CUBLAS(cublasCreate(&handle_Emu));
     cublasLtHandle_t handleLt;
     CHECK_CUBLASLT(cublasLtCreate(&handleLt));
-
-    outFile << std::scientific;
-    std::cout << std::scientific;
 
     const size_t m = 128;
     const size_t n = 128;
@@ -55,6 +53,8 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
     }
 #endif
 
+    outFile << std::scientific;
+    std::cout << std::scientific;
     outFile << "phi,k,function,";
     std::cout << "phi,k,function,";
     for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
@@ -87,6 +87,8 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                 auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
                 CHECK_CUDA(cudaGetLastError());
                 CHECK_CUDA(cudaDeviceSynchronize());
+                outFile << std::scientific;
+                std::cout << std::scientific;
                 outFile << phi << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM,";
                 std::cout << phi << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM,";
                 for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
@@ -104,6 +106,8 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                 auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
                 CHECK_CUDA(cudaGetLastError());
                 CHECK_CUDA(cudaDeviceSynchronize());
+                outFile << std::scientific;
+                std::cout << std::scientific;
                 outFile << phi << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m,";
                 std::cout << phi << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m,";
                 for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
@@ -126,6 +130,8 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                         auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
                         CHECK_CUDA(cudaGetLastError());
                         CHECK_CUDA(cudaDeviceSynchronize());
+                        outFile << std::scientific;
+                        std::cout << std::scientific;
                         outFile << phi << "," << k << ",OS1-" << num_slice << ",";
                         std::cout << phi << "," << k << ",OS1-" << num_slice << ",";
                         for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
@@ -142,6 +148,8 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
                     auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
                     CHECK_CUDA(cudaGetLastError());
                     CHECK_CUDA(cudaDeviceSynchronize());
+                    outFile << std::scientific;
+                    std::cout << std::scientific;
                     outFile << phi << "," << k << ",BF16x9,";
                     std::cout << phi << "," << k << ",BF16x9,";
                     for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
@@ -156,6 +164,8 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
 #endif
 
             // fast mode
+            outFile << std::scientific;
+            std::cout << std::scientific;
             outFile << phi << "," << k << ",OS2-fast,";
             std::cout << phi << "," << k << ",OS2-fast,";
             for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
@@ -181,6 +191,8 @@ __inline__ void accuracy_check(std::string &deviceName, std::string &dateTime) {
             std::cout << std::endl;
 
             // accu mode
+            outFile << std::scientific;
+            std::cout << std::scientific;
             outFile << phi << "," << k << ",OS2-accu,";
             std::cout << phi << "," << k << ",OS2-accu,";
             for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {

@@ -8,6 +8,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
     CHECK_CUDA(cudaSetDevice(0));
     cublasHandle_t handle;
     CHECK_CUBLAS(cublasCreate(&handle));
+    CHECK_CUBLAS(cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST));
     cublasHandle_t handle_Emu;
     CHECK_CUBLAS(cublasCreate(&handle_Emu));
     cublasLtHandle_t handleLt;
@@ -108,6 +109,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                 time_med *= 1.e-3;
                 double TFLOPS = 2.0 * m * n * k * ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) / time_med * 1.0e-12;
 
+                outFile << std::scientific;
+                std::cout << std::scientific;
                 outFile << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM" << ",";
                 outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                 std::cout << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM" << ",";
@@ -139,6 +142,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                 time_med *= 1.e-3;
                 double TFLOPS = 2.0 * m * n * k * ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) / time_med * 1.0e-12;
 
+                outFile << std::scientific;
+                std::cout << std::scientific;
                 outFile << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m" << ",";
                 outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                 std::cout << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m" << ",";
@@ -215,6 +220,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                 time3_med *= 1.e-9;
                 double TFLOPS = 2.0 * m * n * k * ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) / time_med * 1.0e-12;
 
+                outFile << std::scientific;
+                std::cout << std::scientific;
                 outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
                 outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << ",";
                 outFile << time0_med << "," << time1_med << "," << time2_med << "," << time3_med << "," << std::endl;
@@ -292,6 +299,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                 time3_med *= 1.e-9;
                 double TFLOPS = 2.0 * m * n * k * ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) / time_med * 1.0e-12;
 
+                outFile << std::scientific;
+                std::cout << std::scientific;
                 outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
                 outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << ",";
                 outFile << time0_med << "," << time1_med << "," << time2_med << "," << time3_med << "," << std::endl;
@@ -337,6 +346,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                         time_med *= 1.e-3;
                         double TFLOPS = 2.0 * m * n * k * ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) / time_med * 1.0e-12;
 
+                        outFile << std::scientific;
+                        std::cout << std::scientific;
                         outFile << phi << "," << m << "," << n << "," << k << "," << "Oz1-" << num_slice << ",";
                         outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                         std::cout << phi << "," << m << "," << n << "," << k << "," << "Oz1-" << num_slice << ",";
@@ -376,6 +387,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                     time_med *= 1.e-3;
                     double TFLOPS = 2.0 * m * n * k * ((gemmTraits<T>::is_complex) ? 4.0 : 1.0) / time_med * 1.0e-12;
 
+                    outFile << std::scientific;
+                    std::cout << std::scientific;
                     outFile << phi << "," << m << "," << n << "," << k << "," << "BF16x9" << ",";
                     outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                     std::cout << phi << "," << m << "," << n << "," << k << "," << "BF16x9" << ",";
