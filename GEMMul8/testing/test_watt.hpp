@@ -25,7 +25,6 @@ __inline__ void watt_check(std::string &deviceName, std::string &dateTime) {
     CHECK_CUDA(cudaEventCreate(&stop));
     std::vector<float> times(mainloop, 0.0);
 
-    using accu_t        = typename gemmTraits<T>::ACCU_TYPE;
     size_t total_memory = size_t(GPU_MEM_MB);
 
 #if defined(__NVCC__)
@@ -53,7 +52,7 @@ __inline__ void watt_check(std::string &deviceName, std::string &dateTime) {
 #endif
         const size_t lwork      = std::max(lwork_gemmul8, lwork_ozaki1);
         const size_t total_work = lwork + (size_A + size_B + size_C) * sizeof(T);
-        if ((total_work + 256ULL * sizeof(accu_t)) * 1.e-6 > total_memory) {
+        if (std::ceil((total_work + 1024.0 * sizeof(size_t)) * 1.e-6) > total_memory) {
             continue;
         }
 

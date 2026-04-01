@@ -16,15 +16,14 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
 
     outFile << std::scientific;
     std::cout << std::scientific;
-    outFile << "phi,m,n,k,function,err_max,err_med,TFLOPS,total_time[sec],quantization,low_prec_gemm,requantization,dequantization," << std::endl;
-    std::cout << "phi,m,n,k,function,err_max,err_med,TFLOPS,total_time[sec],quantization,low_prec_gemm,requantization,dequantization," << std::endl;
+    outFile << "phi,m,n,k,function,TFLOPS,total_time[sec],quantization,low_prec_gemm,requantization,dequantization," << std::endl;
+    std::cout << "phi,m,n,k,function,TFLOPS,total_time[sec],quantization,low_prec_gemm,requantization,dequantization," << std::endl;
 
     cudaEvent_t start, stop;
     CHECK_CUDA(cudaEventCreate(&start));
     CHECK_CUDA(cudaEventCreate(&stop));
     std::vector<float> times(mainloop, 0.0);
 
-    using accu_t        = typename gemmTraits<T>::ACCU_TYPE;
     size_t total_memory = size_t(GPU_MEM_MB);
 
 #if defined(__NVCC__)
@@ -50,22 +49,19 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
 #else
             const size_t lwork_ozaki1 = 0;
 #endif
-            const size_t lwork      = std::max(size_C * sizeof(accu_t), std::max(lwork_gemmul8, lwork_ozaki1));
+            const size_t lwork      = std::max(lwork_gemmul8, lwork_ozaki1);
             const size_t total_work = lwork + (size_A + size_B + size_C) * sizeof(T);
-            if ((total_work + 256ULL * sizeof(accu_t)) * 1.e-6 > total_memory) {
+            if (std::ceil((total_work + 1024.0 * sizeof(size_t)) * 1.e-6) > total_memory) {
                 continue;
             }
 
             T *A, *B, *C;
-            accu_t *C_hi;
-            std::vector<accu_t> C_hi_h(size_C);
             void *work;
 
             CHECK_CUDA(cudaMalloc(reinterpret_cast<void **>(&A), size_A * sizeof(T)));
             CHECK_CUDA(cudaMalloc(reinterpret_cast<void **>(&B), size_B * sizeof(T)));
             CHECK_CUDA(cudaMalloc(reinterpret_cast<void **>(&C), size_C * sizeof(T)));
             CHECK_CUDA(cudaMalloc(&work, lwork));
-            C_hi = reinterpret_cast<accu_t *>(work);
 
             const int64_t mi = static_cast<int64_t>(m);
             const int64_t ni = static_cast<int64_t>(n);
@@ -79,20 +75,9 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
             CHECK_CUDA(cudaGetLastError());
             CHECK_CUDA(cudaDeviceSynchronize());
 
-            // high-precision AB
-            eval::dd::simple_gemm(m, n, k, A, B, C_hi);
-            CHECK_CUDA(cudaGetLastError());
-            CHECK_CUDA(cudaDeviceSynchronize());
-            CHECK_CUDA(cudaMemcpy(C_hi_h.data(), C_hi, size_C * sizeof(accu_t), cudaMemcpyDeviceToHost));
-
             // native gemm
             {
-                CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
-                auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
-                CHECK_CUDA(cudaGetLastError());
-                CHECK_CUDA(cudaDeviceSynchronize());
-
-                for (int i = 1; i < warmup; ++i) {
+                for (int i = 0; i < warmup; ++i) {
                     CHECK_CUBLAS(gemmTraits<T>::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                 }
 
@@ -112,20 +97,16 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                 outFile << std::scientific;
                 std::cout << std::scientific;
                 outFile << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM" << ",";
-                outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+                outFile << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                 std::cout << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM" << ",";
-                std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+                std::cout << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
             }
 
             // native gemm3m
 #if defined(__NVCC__)
             if constexpr (gemmTraits<T>::is_double && gemmTraits<T>::is_complex) {
-                CHECK_CUBLAS(gemmTraits<T>::gemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
-                auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
-                CHECK_CUDA(cudaGetLastError());
-                CHECK_CUDA(cudaDeviceSynchronize());
 
-                for (int i = 1; i < warmup; ++i) {
+                for (int i = 0; i < warmup; ++i) {
                     CHECK_CUBLAS(gemmTraits<T>::gemm3m(handle, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                 }
 
@@ -145,9 +126,9 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                 outFile << std::scientific;
                 std::cout << std::scientific;
                 outFile << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m" << ",";
-                outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+                outFile << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                 std::cout << phi << "," << m << "," << n << "," << k << "," << gemmTraits<T>::prefix_upper() << "GEMM3m" << ",";
-                std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+                std::cout << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
             }
 #endif
 
@@ -155,23 +136,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
             for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
 
                 std::vector<double> time0(mainloop, 0.0), time1(mainloop, 0.0), time2(mainloop, 0.0), time3(mainloop, 0.0), timestmp(4, 0.0);
-#if defined(__NVCC__)
-                gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
-#else
-                if constexpr (backend == gemmul8::Backend::INT8) {
-                    gemmul8::gemm<T, backend>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
-                } else {
-                    gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
-                }
-#endif
-                CHECK_CUDA(cudaGetLastError());
-                CHECK_CUDA(cudaDeviceSynchronize());
-                CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));
-                auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
-                CHECK_CUDA(cudaGetLastError());
-                CHECK_CUDA(cudaDeviceSynchronize());
 
-                for (int i = 1; i < warmup; ++i) {
+                for (int i = 0; i < warmup; ++i) {
 #if defined(__NVCC__)
                     gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
 #else
@@ -181,6 +147,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                         gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, true, work);
                     }
 #endif
+                    CHECK_CUDA(cudaGetLastError());
+                    CHECK_CUDA(cudaDeviceSynchronize());
                 }
 
                 for (int i = 0; i < mainloop; ++i) {
@@ -223,10 +191,10 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                 outFile << std::scientific;
                 std::cout << std::scientific;
                 outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
-                outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << ",";
+                outFile << TFLOPS << "," << time_med << ",";
                 outFile << time0_med << "," << time1_med << "," << time2_med << "," << time3_med << "," << std::endl;
                 std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-fast-" << num_moduli << ",";
-                std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << ",";
+                std::cout << TFLOPS << "," << time_med << ",";
                 std::cout << time0_med << "," << time1_med << "," << time2_med << "," << time3_med << "," << std::endl;
             }
 
@@ -234,23 +202,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
             for (unsigned num_moduli = NUM_MODULI_MIN<T>; num_moduli <= NUM_MODULI_MAX<T>; ++num_moduli) {
 
                 std::vector<double> time0(mainloop, 0.0), time1(mainloop, 0.0), time2(mainloop, 0.0), time3(mainloop, 0.0), timestmp(4, 0.0);
-#if defined(__NVCC__)
-                gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
-#else
-                if constexpr (backend == gemmul8::Backend::INT8) {
-                    gemmul8::gemm<T, backend>(handle, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
-                } else {
-                    gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
-                }
-#endif
-                CHECK_CUDA(cudaGetLastError());
-                CHECK_CUDA(cudaDeviceSynchronize());
-                CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));
-                auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
-                CHECK_CUDA(cudaGetLastError());
-                CHECK_CUDA(cudaDeviceSynchronize());
 
-                for (int i = 1; i < warmup; ++i) {
+                for (int i = 0; i < warmup; ++i) {
 #if defined(__NVCC__)
                     gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
 #else
@@ -260,6 +213,8 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                         gemmul8::gemmLt<T, backend>(handleLt, CUBLAS_OP_N, CUBLAS_OP_N, m, n, k, &alpha, A, m, B, k, &beta, C, m, num_moduli, false, work);
                     }
 #endif
+                    CHECK_CUDA(cudaGetLastError());
+                    CHECK_CUDA(cudaDeviceSynchronize());
                 }
 
                 for (int i = 0; i < mainloop; ++i) {
@@ -302,10 +257,10 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                 outFile << std::scientific;
                 std::cout << std::scientific;
                 outFile << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
-                outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << ",";
+                outFile << TFLOPS << "," << time_med << ",";
                 outFile << time0_med << "," << time1_med << "," << time2_med << "," << time3_med << "," << std::endl;
                 std::cout << phi << "," << m << "," << n << "," << k << "," << "OS2-accu-" << num_moduli << ",";
-                std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << ",";
+                std::cout << TFLOPS << "," << time_med << ",";
                 std::cout << time0_med << "," << time1_med << "," << time2_med << "," << time3_med << "," << std::endl;
             }
 
@@ -323,13 +278,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                         int mantissaBitCount = num_slice * 8 - 1;
                         cublasSetFixedPointEmulationMaxMantissaBitCount(handle_Emu, mantissaBitCount);
 
-                        CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
-                        CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));
-                        auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
-                        CHECK_CUDA(cudaGetLastError());
-                        CHECK_CUDA(cudaDeviceSynchronize());
-
-                        for (int i = 1; i < warmup; ++i) {
+                        for (int i = 0; i < warmup; ++i) {
                             CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                         }
 
@@ -349,9 +298,9 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                         outFile << std::scientific;
                         std::cout << std::scientific;
                         outFile << phi << "," << m << "," << n << "," << k << "," << "Oz1-" << num_slice << ",";
-                        outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+                        outFile << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                         std::cout << phi << "," << m << "," << n << "," << k << "," << "Oz1-" << num_slice << ",";
-                        std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+                        std::cout << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                     }
 
                     cublasSetWorkspace(handle_Emu, nullptr, 0);
@@ -364,13 +313,7 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
     #if CUBLAS_GE_12_9
                     cublasSetMathMode(handle_Emu, CUBLAS_FP32_EMULATED_BF16X9_MATH);
 
-                    CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
-                    CHECK_CUDA(cudaMemcpy(C_hi, C_hi_h.data(), size_C * sizeof(accu_t), cudaMemcpyHostToDevice));
-                    auto [err_max, err_med] = eval::err::gemm_err(m, n, C, C_hi);
-                    CHECK_CUDA(cudaGetLastError());
-                    CHECK_CUDA(cudaDeviceSynchronize());
-
-                    for (int i = 1; i < warmup; ++i) {
+                    for (int i = 0; i < warmup; ++i) {
                         CHECK_CUBLAS(gemmTraits<T>::gemm(handle_Emu, CUBLAS_OP_N, CUBLAS_OP_N, mi, ni, ki, &alpha, A, mi, B, ki, &beta, C, mi));
                     }
 
@@ -390,9 +333,9 @@ __inline__ void time_check(std::string &deviceName, std::string &dateTime) {
                     outFile << std::scientific;
                     std::cout << std::scientific;
                     outFile << phi << "," << m << "," << n << "," << k << "," << "BF16x9" << ",";
-                    outFile << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+                    outFile << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
                     std::cout << phi << "," << m << "," << n << "," << k << "," << "BF16x9" << ",";
-                    std::cout << err_max << "," << err_med << "," << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
+                    std::cout << TFLOPS << "," << time_med << "," << "," << "," << "," << "," << std::endl;
 
                     cublasSetMathMode(handle_Emu, CUBLAS_DEFAULT_MATH);
     #endif
