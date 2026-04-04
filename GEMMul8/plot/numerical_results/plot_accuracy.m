@@ -2,7 +2,7 @@ function plot_accuracy(type_in,GPU_name)
 
 arguments (Input)
     type_in (1,1) string = "d"
-    GPU_name (1,1) string = "B200"
+    GPU_name (1,1) string = "RTX5080"
 end
 
 FontSize = 8;
@@ -50,7 +50,7 @@ end
 yl_min = inf;
 yl_max = 0;
 phi = [-1, 1, 2, 4];
-fig = figure('Position',[50,50,500,400]);
+fig = figure('Position',[50,50,550,300]);
 t = tiledlayout(1,4);
 for tid = 1:4
     nexttile; hold on; grid on;

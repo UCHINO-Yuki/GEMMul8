@@ -2,7 +2,7 @@ function plot_breakdown(type_in,GPU_name)
 
 arguments (Input)
     type_in (1,1) string = "d"
-    GPU_name (1,1) string = "RTX5080"
+    GPU_name (1,1) string = "B200"
 end
 
 FontSize = 8;
@@ -19,15 +19,15 @@ if ~isempty(dir_name_i8)
     k_i8 = readmatrix(file_name_i8,data_i8);
     data_i8.SelectedVariableNames = 5;
     func_i8 = readmatrix(file_name_i8,data_i8);
-    data_i8.SelectedVariableNames = 9;
+    data_i8.SelectedVariableNames = 7;
     total_i8 = readmatrix(file_name_i8,data_i8);
-    data_i8.SelectedVariableNames = 10;
+    data_i8.SelectedVariableNames = 8;
     quant_i8 = readmatrix(file_name_i8,data_i8);
-    data_i8.SelectedVariableNames = 11;
+    data_i8.SelectedVariableNames = 9;
     gemms_i8 = readmatrix(file_name_i8,data_i8);
-    data_i8.SelectedVariableNames = 12;
+    data_i8.SelectedVariableNames = 10;
     requant_i8 = readmatrix(file_name_i8,data_i8);
-    data_i8.SelectedVariableNames = 13;
+    data_i8.SelectedVariableNames = 11;
     dequant_i8 = readmatrix(file_name_i8,data_i8);
     others_i8 = total_i8 - quant_i8 - gemms_i8 - requant_i8 - dequant_i8;
     quant_i8 = quant_i8./total_i8.*100;
@@ -48,15 +48,15 @@ if ~isempty(dir_name_f8)
     k_f8 = readmatrix(file_name_f8,data_f8);
     data_f8.SelectedVariableNames = 5;
     func_f8 = readmatrix(file_name_f8,data_f8);
-    data_f8.SelectedVariableNames = 9;
+    data_f8.SelectedVariableNames = 7;
     total_f8 = readmatrix(file_name_f8,data_f8);
-    data_f8.SelectedVariableNames = 10;
+    data_f8.SelectedVariableNames = 8;
     quant_f8 = readmatrix(file_name_f8,data_f8);
-    data_f8.SelectedVariableNames = 11;
+    data_f8.SelectedVariableNames = 9;
     gemms_f8 = readmatrix(file_name_f8,data_f8);
-    data_f8.SelectedVariableNames = 12;
+    data_f8.SelectedVariableNames = 10;
     requant_f8 = readmatrix(file_name_f8,data_f8);
-    data_f8.SelectedVariableNames = 13;
+    data_f8.SelectedVariableNames = 11;
     dequant_f8 = readmatrix(file_name_f8,data_f8);
     others_f8 = total_f8 - quant_f8 - gemms_f8 - requant_f8 - dequant_f8;
     quant_f8 = quant_f8./total_f8.*100;
@@ -75,7 +75,7 @@ for i=length(size_list):-1:1
     end
 end
 xlims = unique(k_i8);
-fig = figure('Position',[50,50,500,420]);
+fig = figure('Position',[50,50,500,370]);
 t = tiledlayout(4,length(size_list));
 
 for tid = 1:length(size_list)
@@ -150,7 +150,7 @@ for tid = 1:length(size_list)
 
     end
 
-    title("{\itm=n=2^{" + log2(m) + "}}");
+    % title("{\itm=n=2^{" + log2(m) + "}}");
     ylim([0 100]);
     yticks(0:20:100);
     if tid == 1
@@ -201,7 +201,7 @@ for tid = 1:length(size_list)
 
     end
 
-    title("{\itm=n=2^{" + log2(m) + "}}");
+    % title("{\itm=n=2^{" + log2(m) + "}}");
     ylim([0 100]);
     yticks(0:20:100);
     if tid == 1
@@ -252,7 +252,7 @@ for tid = 1:length(size_list)
 
     end
 
-    title("{\itm=n=2^{" + log2(m) + "}}");
+    % title("{\itm=n=2^{" + log2(m) + "}}");
     ylim([0 100]);
     yticks(0:20:100);
     if tid == 1

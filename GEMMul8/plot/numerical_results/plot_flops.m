@@ -21,7 +21,7 @@ if ~isempty(dir_name_i8)
     k_i8 = readmatrix(file_name_i8,data_i8);
     data_i8.SelectedVariableNames = 5;
     func_i8 = readmatrix(file_name_i8,data_i8);
-    data_i8.SelectedVariableNames = 8;
+    data_i8.SelectedVariableNames = 6;
     tflops_i8 = readmatrix(file_name_i8,data_i8);
 end
 
@@ -36,21 +36,27 @@ if ~isempty(dir_name_f8)
     k_f8 = readmatrix(file_name_f8,data_f8);
     data_f8.SelectedVariableNames = 5;
     func_f8 = readmatrix(file_name_f8,data_f8);
-    data_f8.SelectedVariableNames = 8;
+    data_f8.SelectedVariableNames = 6;
     tflops_f8 = readmatrix(file_name_f8,data_f8);
 end
 
 %% plot
 size_list = [1024 2048 4096 8192 16384 32768];
-fig = figure('Position',[50,50,550,400]);
+fig = figure('Position',[50,50,550,380]);
 for i=length(size_list):-1:1
     if size_list(i)>min(max(m_i8),max(m_f8))
         size_list(i)=[];
     end
 end
-t = tiledlayout(2,max(3,ceil(length(size_list)/2)));
+if length(size_list)<=4
+    t = tiledlayout(1,max(4,ceil(length(size_list)/2)));
+    fig.Position(4) = 245;
+else
+    t = tiledlayout(2,max(3,ceil(length(size_list)/2)));
+end
 xlims_max = [inf,0];
 i8_f8_ratio = [inf 0];
+yl = [inf,0];
 for tid = 1:length(size_list)
     m = size_list(tid);
     nexttile; hold on; grid on;
@@ -61,7 +67,7 @@ for tid = 1:length(size_list)
         if any(idx)
             tflops = tflops_i8(idx);
             k = k_i8(idx);
-            plot(1:length(k),tflops,mark(1,1,1),'DisplayName',"native FP64 DGEMM", 'MarkerSize',5, 'LineWidth',1);
+            plot(1:length(k),tflops,mark(1,2,1),'DisplayName',"native FP64 DGEMM", 'MarkerSize',5, 'LineWidth',1);
             tflops_DGEMM = tflops;
         end
 
@@ -77,7 +83,7 @@ for tid = 1:length(size_list)
         if any(idx)
             tflops = tflops_i8(idx);
             k = k_i8(idx);
-            plot(1:length(k),tflops,mark(1,1,3),'DisplayName',"INT8-based Ozaki-II fast (16 moduli)", 'MarkerSize',5, 'LineWidth',1);
+            plot(1:length(k),tflops,mark(1,3,3),'DisplayName',"INT8-based Ozaki-II fast (16 moduli)", 'MarkerSize',5, 'LineWidth',1);
             tflops_i8fast = tflops;
         end
 
@@ -85,7 +91,7 @@ for tid = 1:length(size_list)
         if any(idx)
             tflops = tflops_i8(idx);
             k = k_i8(idx);
-            plot(1:length(k),tflops,mark(1,1,4),'DisplayName',"INT8-based Ozaki-II accu. (15 moduli)", 'MarkerSize',5, 'LineWidth',1);
+            plot(1:length(k),tflops,mark(1,4,4),'DisplayName',"INT8-based Ozaki-II accu. (15 moduli)", 'MarkerSize',5, 'LineWidth',1);
             tflops_i8accu = tflops;
         end
 
@@ -104,7 +110,7 @@ for tid = 1:length(size_list)
         if any(idx)
             tflops = tflops_f8(idx);
             k = k_f8(idx);
-            plot(1:length(k),tflops,mark(1,1,5),'DisplayName',"FP8-based Ozaki-II fast (13 moduli)", 'MarkerSize',5, 'LineWidth',1);
+            plot(1:length(k),tflops,mark(1,5,5),'DisplayName',"FP8-based Ozaki-II fast (13 moduli)", 'MarkerSize',5, 'LineWidth',1);
             tflops_f8fast = tflops;
         end
 
@@ -112,7 +118,7 @@ for tid = 1:length(size_list)
         if any(idx)
             tflops = tflops_f8(idx);
             k = k_f8(idx);
-            plot(1:length(k),tflops,mark(1,1,6),'DisplayName',"FP8-based Ozaki-II accu. (12 moduli)", 'MarkerSize',5, 'LineWidth',1);
+            plot(1:length(k),tflops,mark(1,7,6),'DisplayName',"FP8-based Ozaki-II accu. (12 moduli)", 'MarkerSize',5, 'LineWidth',1);
             tflops_f8accu = tflops;
         end
 
@@ -132,11 +138,21 @@ for tid = 1:length(size_list)
     title("{\itm=n=" + m +"=2^{" + log2(m) + "}}");
     set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
     ylim('padded');
+    yl_tmp = ylim;
+    yl(1) = min(yl(1), yl_tmp(1));
+    yl(2) = max(yl(2), yl_tmp(2));
     xlims = pow2(log2(xlims_max(1)):log2(xlims_max(2)));
     xlim([1 length(xlims)]);
     xticks(1:length(xlims));
     xticklabels("2^{" + log2(xlims) + "}")
     xtickangle(0)
+end
+
+inc = ceil((yl(2)-yl(1))/45)*5
+for tid = 1:length(size_list)
+    nexttile(tid);
+    ylim(yl);
+    yticks(0:inc:200);
 end
 
 i8_f8_ratio
@@ -147,7 +163,7 @@ lgd.Layout.Tile = 'north';
 t.TileSpacing = "tight";
 t.Padding = "compact";
 xlabel(t,"\itk");
-ylabel(t,"TFLOP/s ({\it2mnk/sec/10^{12}})");
+ylabel(t,"TFLOP/s");
 set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
 
 savefig(fig,GPU_name+"/"+GPU_name+"_flops_"+type_in);
