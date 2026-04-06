@@ -2,7 +2,7 @@ function plot_accuracy(type_in,GPU_name)
 
 arguments (Input)
     type_in (1,1) string = "d"
-    GPU_name (1,1) string = "RTX5080"
+    GPU_name (1,1) string = "RTX4090Laptop"
 end
 
 FontSize = 8;

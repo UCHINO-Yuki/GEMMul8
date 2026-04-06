@@ -5,7 +5,7 @@ clc
 
 GPUs = ["RTX4090Laptop" "RTX5080" "RX9070XT" "GH200" "GB10" "B200"];
 GPUNAME = ["NVIDIA RTX 4090 Laptop" "NVIDIA RTX 5080" "AMD RX 9070 XT" "NVIDIA GH200" "NVIDIA GB10" "NVIDIA B200"];
-SOFT = ["CUDA Toolkit 13.2.51", "CUDA Toolkit 13.2.51", "ROCm 7.2.1", "CUDA Toolkit 13.1.115", "CUDA Toolkit 13.0.88", "CUDA Toolkit 13.1.80"];
+SOFT = ["CUDA Toolkit 13.2.51", "CUDA Toolkit 13.2.51", "ROCm 7.2.1", "CUDA Toolkit 13.1.115", "CUDA Toolkit 13.2.51", "CUDA Toolkit 13.1.80"];
 TYPE = ["d"];
 SIZE = [1024 2048 4096 8192 16384 32768];
 
