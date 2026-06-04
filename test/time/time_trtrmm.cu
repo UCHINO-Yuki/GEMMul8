@@ -240,7 +240,7 @@ void check_time(
         constexpr size_t lwork_blas       = size_t(32) << 20;  // 32 MiB
         constexpr size_t safety_margin    = size_t(256) << 20; // 256 MiB
         constexpr size_t alignment_margin = size_t(1) << 20;   // 1 MiB
-        size_t lwork_ABC                  = lwork_blas + size_A + size_B + size_A + size_B + size_C;
+        size_t lwork_ABC                  = lwork_blas + size_A + size_B + size_C;
 
         size_t free_bytes  = 0;
         size_t total_bytes = 0;
