@@ -475,20 +475,20 @@ The hook targets are exact-symbol based. If a `v2` symbol exists in cuBLAS, GEMM
 
 Batched, strided-batched, and grouped-batched routines are not hook targets.
 
-| Family | CUDA hook targets                                                                                              | HIP hook targets                                                 |
-| :----- | :------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------- |
-| GEMM   | `cublas{S,D,C,Z}gemm_v2` / `_64`<br>`cublasGemmEx` / `_64`<br>                                                 | `hipblas{S,D,C,Z}gemm` / `_64`<br>`hipblasGemmEx` / `_64`        |
-| GEMM   | `cublas{C,Z}gemm3m` / `_64`<br>`cublasSgemmEx` / `_64`<br>`cublasCgemmEx` / `_64`<br>`cublasCgemm3mEx` / `_64` | not supported                                                    |
-| SYMM   | `cublas{S,D,C,Z}symm_v2` / `_64`                                                                               | `hipblas{S,D,C,Z}symm` / `_64`                                   |
-| SYRK   | `cublas{S,D,C,Z}syrk_v2` / `_64`<br>`cublasCsyrkEx` / `_64`<br>`cublasCsyrk3mEx` / `_64`                       | `hipblas{S,D,C,Z}syrk` / `_64`<br>`hipblasSyrkEx` when available |
-| SYR2K  | `cublas{S,D,C,Z}syr2k_v2` / `_64`                                                                              | `hipblas{S,D,C,Z}syr2k` / `_64`                                  |
-| SYRKX  | `cublas{S,D,C,Z}syrkx` / `_64`                                                                                 | `hipblas{S,D,C,Z}syrkx` / `_64`                                  |
-| HEMM   | `cublas{C,Z}hemm_v2` / `_64`                                                                                   | `hipblas{C,Z}hemm` / `_64`                                       |
-| HERK   | `cublas{C,Z}herk_v2` / `_64`<br>`cublasCherkEx` / `_64`<br>`cublasCherk3mEx` / `_64`                           | `hipblas{C,Z}herk` / `_64`<br>`hipblasHerkEx` when available     |
-| HER2K  | `cublas{C,Z}her2k_v2` / `_64`                                                                                  | `hipblas{C,Z}her2k` / `_64`                                      |
-| HERKX  | `cublas{C,Z}herkx` / `_64`                                                                                     | `hipblas{C,Z}herkx` / `_64`                                      |
-| TRMM   | `cublas{S,D,C,Z}trmm_v2` / `_64`                                                                               | `hipblas{S,D,C,Z}trmm` / `_64`                                   |
-| TRSM   | `cublas{S,D,C,Z}trsm_v2` / `_64`                                                                               | `hipblas{S,D,C,Z}trsm` / `_64`                                   |
+| Family | CUDA hook targets                                                                                              | HIP hook targets                                          |
+| :----- | :------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------- |
+| GEMM   | `cublas{S,D,C,Z}gemm_v2` / `_64`<br>`cublasGemmEx` / `_64`<br>                                                 | `hipblas{S,D,C,Z}gemm` / `_64`<br>`hipblasGemmEx` / `_64` |
+| GEMM   | `cublas{C,Z}gemm3m` / `_64`<br>`cublasSgemmEx` / `_64`<br>`cublasCgemmEx` / `_64`<br>`cublasCgemm3mEx` / `_64` | not supported                                             |
+| SYMM   | `cublas{S,D,C,Z}symm_v2` / `_64`                                                                               | `hipblas{S,D,C,Z}symm` / `_64`                            |
+| SYRK   | `cublas{S,D,C,Z}syrk_v2` / `_64`<br>`cublasCsyrkEx` / `_64`<br>`cublasCsyrk3mEx` / `_64`                       | `hipblas{S,D,C,Z}syrk` / `_64`                            |
+| SYR2K  | `cublas{S,D,C,Z}syr2k_v2` / `_64`                                                                              | `hipblas{S,D,C,Z}syr2k` / `_64`                           |
+| SYRKX  | `cublas{S,D,C,Z}syrkx` / `_64`                                                                                 | `hipblas{S,D,C,Z}syrkx` / `_64`                           |
+| HEMM   | `cublas{C,Z}hemm_v2` / `_64`                                                                                   | `hipblas{C,Z}hemm` / `_64`                                |
+| HERK   | `cublas{C,Z}herk_v2` / `_64`<br>`cublasCherkEx` / `_64`<br>`cublasCherk3mEx` / `_64`                           | `hipblas{C,Z}herk` / `_64`                                |
+| HER2K  | `cublas{C,Z}her2k_v2` / `_64`                                                                                  | `hipblas{C,Z}her2k` / `_64`                               |
+| HERKX  | `cublas{C,Z}herkx` / `_64`                                                                                     | `hipblas{C,Z}herkx` / `_64`                               |
+| TRMM   | `cublas{S,D,C,Z}trmm_v2` / `_64`                                                                               | `hipblas{S,D,C,Z}trmm` / `_64`                            |
+| TRSM   | `cublas{S,D,C,Z}trsm_v2` / `_64`                                                                               | `hipblas{S,D,C,Z}trsm` / `_64`                            |
 
 `trtrmm` / `trtrmmLt` are not hook targets because they are GEMMul8-specific routines rather than standard cuBLAS/hipBLAS routines.
 

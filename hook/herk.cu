@@ -6,10 +6,8 @@
  *   - cublas{C,Z}herk_v2
  *   - cublas{C,Z}herk_v2_64
  *
- * Optional Ex hook targets:
- *   - cublasCherkEx
- *
  * CUDA-only hook targets:
+ *   - cublasCherkEx
  *   - cublasCherkEx_64
  *   - cublasCherk3mEx
  *   - cublasCherk3mEx_64
@@ -18,10 +16,6 @@
  *   - HERK is a complex Hermitian rank-k update; there are no S/D HERK hooks.
  *   - cublas{C,Z}herk and cublas{C,Z}herk_64 are not defined here because
  *     the v2 variants are used when v2 exists.
- *   - cublasCherkEx may be compiled for HIP only when self_hipify.hpp maps it
- *     to a supported hipBLAS API and defines hipblas_rkEx_flag.
- *   - cublasCherkEx_64 and cublasCherk3mEx have no HIP equivalents in the
- *     current self-hipify mapping, so these hooks are compiled only for CUDA.
  */
 #include "common.hpp"
 

@@ -20,9 +20,6 @@
  * Notes:
  *   - cublas{S,D,C,Z}gemm and cublas{S,D,C,Z}gemm_64 are not defined here
  *     because the v2 variants are used when v2 exists.
- *   - cublasSgemmEx, cublasCgemmEx, cublas{C,Z}gemm3m, and cublasCgemm3mEx have no HIP
- *     equivalents in the current self-hipify mapping, so these hooks are
- *     compiled only for CUDA.
  */
 #include "common.hpp"
 

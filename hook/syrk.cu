@@ -6,10 +6,8 @@
  *   - cublas{S,D,C,Z}syrk_v2
  *   - cublas{S,D,C,Z}syrk_v2_64
  *
- * Optional Ex hook targets:
- *   - cublasCsyrkEx
- *
  * CUDA-only hook targets:
+ *   - cublasCsyrkEx
  *   - cublasCsyrkEx_64
  *   - cublasCsyrk3mEx
  *   - cublasCsyrk3mEx_64
@@ -17,10 +15,6 @@
  * Notes:
  *   - cublas{S,D,C,Z}syrk and cublas{S,D,C,Z}syrk_64 are not defined here
  *     because the v2 variants are used when v2 exists.
- *   - cublasCsyrkEx may be compiled for HIP only when self_hipify.hpp maps it
- *     to a supported hipBLAS API and defines hipblas_rkEx_flag.
- *   - cublasCsyrkEx_64 and cublasCsyrk3mEx have no HIP equivalents in the
- *     current self-hipify mapping, so these hooks are compiled only for CUDA.
  */
 #include "common.hpp"
 
