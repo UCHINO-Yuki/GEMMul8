@@ -36,6 +36,61 @@ struct DD_complex {
     __host__ __device__ constexpr DD_complex(cuDoubleComplex reim) : re(reim.x), im(reim.y) {}
 };
 
+struct DD_real_storage {
+    double hi;
+    double lo;
+};
+
+struct DD_complex_storage {
+    DD_real_storage re;
+    DD_real_storage im;
+};
+
+template <typename T>
+struct eval_shared_storage_traits {
+    using storage_t = T;
+
+    __device__ __forceinline__ static storage_t pack(const T x) {
+        return x;
+    }
+
+    __device__ __forceinline__ static T unpack(const storage_t x) {
+        return x;
+    }
+};
+
+template <>
+struct eval_shared_storage_traits<DD_real> {
+    using storage_t = DD_real_storage;
+
+    __device__ __forceinline__ static storage_t pack(const DD_real x) {
+        return DD_real_storage{x.hi, x.lo};
+    }
+
+    __device__ __forceinline__ static DD_real unpack(const storage_t x) {
+        return DD_real{x.hi, x.lo};
+    }
+};
+
+template <>
+struct eval_shared_storage_traits<DD_complex> {
+    using storage_t = DD_complex_storage;
+
+    __device__ __forceinline__ static storage_t pack(const DD_complex x) {
+        return DD_complex_storage{
+            DD_real_storage{x.re.hi, x.re.lo},
+            DD_real_storage{x.im.hi, x.im.lo}
+        };
+    }
+
+    __device__ __forceinline__ static DD_complex unpack(const storage_t x) {
+        return DD_complex{
+            DD_real{x.re.hi, x.re.lo},
+            DD_real{x.im.hi, x.im.lo}
+        };
+    }
+};
+
 namespace {
 
 template <typename T> __host__ __device__ __forceinline__ T Tzero() { return T(0); };
@@ -299,7 +354,8 @@ __global__ void tri_2_sym_kernel(
 ) {
     constexpr int TILE = 32;
 
-    __shared__ T smem[TILE][TILE + 1];
+    using ShmT = typename eval_shared_storage_traits<T>::storage_t;
+    __shared__ ShmT smem[TILE][TILE + 1];
 
     size_t load_row = blockDim.x * blockIdx.x + threadIdx.x;
     size_t load_col = blockDim.y * blockIdx.y + threadIdx.y;
@@ -314,7 +370,7 @@ __global__ void tri_2_sym_kernel(
         }
 
         if (load) {
-            smem[threadIdx.x][threadIdx.y] = A[load_col * lda + load_row];
+            smem[threadIdx.x][threadIdx.y] = eval_shared_storage_traits<T>::pack(A[load_col * lda + load_row]);
         }
     }
 
@@ -331,10 +387,11 @@ __global__ void tri_2_sym_kernel(
         if (row >= col) return; // fill upper triangle only
     }
 
+    const T tmp = eval_shared_storage_traits<T>::unpack(smem[threadIdx.y][threadIdx.x]);
     if constexpr (CONJ) {
-        B[col * ldb + row] = conj(smem[threadIdx.y][threadIdx.x]);
+        B[col * ldb + row] = conj(tmp);
     } else {
-        B[col * ldb + row] = smem[threadIdx.y][threadIdx.x];
+        B[col * ldb + row] = tmp;
     }
 }
 
@@ -523,7 +580,9 @@ __global__ void her2k_final_kernel(
 ) {
     constexpr int TILE = 32;
 
-    __shared__ TD smem[TILE][TILE + 1];
+    using ShmTD = typename eval_shared_storage_traits<TD>::storage_t;
+
+    __shared__ ShmTD smem[TILE][TILE + 1];
 
     size_t load_row = blockDim.x * blockIdx.x + threadIdx.x;
     size_t load_col = blockDim.y * blockIdx.y + threadIdx.y;
@@ -538,7 +597,7 @@ __global__ void her2k_final_kernel(
         }
 
         if (load) {
-            smem[threadIdx.x][threadIdx.y] = D[load_col * ldd + load_row];
+            smem[threadIdx.x][threadIdx.y] = eval_shared_storage_traits<TD>::pack(D[load_col * ldd + load_row]);
         }
     }
 
@@ -555,8 +614,9 @@ __global__ void her2k_final_kernel(
         if (row < col) return;
     }
 
-    const TD D_ij = D[col * ldd + row];
-    const TD D_ji = (CONJ) ? conj(smem[threadIdx.y][threadIdx.x]) : smem[threadIdx.y][threadIdx.x];
+    const TD D_ij     = D[col * ldd + row];
+    const TD D_ji_raw = eval_shared_storage_traits<TD>::unpack(smem[threadIdx.y][threadIdx.x]);
+    const TD D_ji     = (CONJ) ? conj(D_ji_raw) : D_ji_raw;
 
     using accu_t      = ACCU_t<TC>;
     const size_t idxC = col * ldc + row;
@@ -663,8 +723,10 @@ __global__ void DDgemm_kernel(
     TC *const __restrict__ C, size_t ldc //
 ) {
     constexpr int TILE = DDGEMM_TILE<TA, TB>;
-    __shared__ TA Asub[TILE][TILE + 1];
-    __shared__ TB Bsub[TILE][TILE + 1];
+    using ShmTA        = typename eval_shared_storage_traits<TA>::storage_t;
+    using ShmTB        = typename eval_shared_storage_traits<TB>::storage_t;
+    __shared__ ShmTA Asub[TILE][TILE + 1];
+    __shared__ ShmTB Bsub[TILE][TILE + 1];
 
     size_t row = blockIdx.y * blockDim.y + threadIdx.y;
     size_t col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -675,18 +737,20 @@ __global__ void DDgemm_kernel(
 
     for (int t = 0; t < numTiles; ++t) {
         size_t a_col                   = t * TILE + threadIdx.x;
-        Asub[threadIdx.y][threadIdx.x] = load_A_element<TA, opA>(A, lda, m, k, row, a_col);
+        Asub[threadIdx.y][threadIdx.x] = eval_shared_storage_traits<TA>::pack(load_A_element<TA, opA>(A, lda, m, k, row, a_col));
 
         size_t b_row                   = t * TILE + threadIdx.y;
-        Bsub[threadIdx.y][threadIdx.x] = load_B_element<TB, opB, CONJ_B>(B, ldb, k, n, b_row, col);
+        Bsub[threadIdx.y][threadIdx.x] = eval_shared_storage_traits<TB>::pack(load_B_element<TB, opB, CONJ_B>(B, ldb, k, n, b_row, col));
 
         __syncthreads();
 
 #pragma unroll
         for (int i = 0; i < TILE; ++i) {
 
-            auto a = accu_t(Asub[threadIdx.y][i]);
-            auto b = accu_t(Bsub[i][threadIdx.x]);
+            const TA a_val = eval_shared_storage_traits<TA>::unpack(Asub[threadIdx.y][i]);
+            const TB b_val = eval_shared_storage_traits<TB>::unpack(Bsub[i][threadIdx.x]);
+            auto a         = accu_t(a_val);
+            auto b         = accu_t(b_val);
 
             sum = a * b + sum;
         }
@@ -799,7 +863,7 @@ void DDgemm(
     static_assert(same_complex_domain_v<TA, TB, TC>,
                   "DDgemm requires TA, TB, and TC to be all real or all complex.");
 
-    using accu_t = ACCU_t<TC>;
+    using accu_t       = ACCU_t<TC>;
     constexpr int TILE = DDGEMM_TILE<TA, TB>;
     dim3 threadsPerBlock(TILE, TILE);
     dim3 numBlocks((n + threadsPerBlock.x - 1) / threadsPerBlock.x,

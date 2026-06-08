@@ -41,6 +41,7 @@ This design enables bit-wise reproducible results while using low-precision matr
 - [Numerical results](#numerical-results)
 - [Acknowledgment](#acknowledgment)
   - [Assistance with debugging](#assistance-with-debugging)
+  - [Assistance with preliminary experiments](#assistance-with-preliminary-experiments)
 - [Contact (Responsible Developer)](#contact-responsible-developer)
 - [References](#references)
 - [Citations](#citations)
@@ -237,7 +238,7 @@ See `include/gemm.hpp`, `include/symm.hpp`, etc. for the full function signature
 The TRSM block-size control API is declared in `include/trsm.hpp`:
 
 ```cpp
-void gemmul8::set_block_size_trsm(int nB) noexcept;
+void gemmul8::set_block_size_trsm(const int nB) noexcept;
 int gemmul8::get_block_size_trsm() noexcept;
 ```
 
@@ -341,10 +342,16 @@ The implementation combines:
 The internal block size can be controlled with:
 
 ```cpp
-gemmul8::set_block_size_trsm(int nB);
+gemmul8::set_block_size_trsm(const int nB);
 ```
 
 If `set_block_size_trsm(nB)` has not been called, or if the value set by `set_block_size_trsm(nB)` is non-positive, GEMMul8 automatically selects the TRSM block size from the detected GPU architecture and backend.
+
+> [!NOTE]
+>
+> The automatically selected TRSM block size is a heuristic default and is not guaranteed to be the fastest setting.
+> For performance tuning, benchmark several block sizes and set a custom value with `gemmul8::set_block_size_trsm(nB)`.
+
 A positive value passed to `set_block_size_trsm(nB)` is used as the block size for subsequent `trsm()` and `trsmLt()` calls.
 The setting is process-global and also affects the workspace size returned by `workSizeTrsm()`.
 Therefore, when using a custom block size, call `set_block_size_trsm(nB)` before calling `workSizeTrsm()` and before allocating the workspace.
@@ -773,6 +780,18 @@ See numerical results in the separate repository: [GEMMul8_numerical_results](ht
 - Prajval Kumar (Indian Institute of Science and Education Research, India)
 - Dr. William Dawson (RIKEN Center for Computational Science, Japan)
 - Dr. Toshiyuki Imamura (RIKEN Center for Computational Science, Japan)
+
+### Assistance with preliminary experiments
+
+The following individuals helped conduct preliminary performance experiments on B200 systems at Yokota Lab:
+
+- Dr. Qianxiang Ma (RIKEN Center for Computational Science, Japan)
+- Prof. Rio Yokota (Institute of Science Tokyo, Japan)
+
+The following individuals helped conduct preliminary experiments on the B200 environment of SAKURAONE, SAKURA internet Inc.'s managed HPC cluster service:
+
+- Takeshi Yamashita (SAKURA internet Inc., Japan)
+- Fumikazu Konishi (SAKURA internet Inc., Japan)
 
 (Affiliations as of 2025)
 

@@ -18,7 +18,7 @@ __device__ __forceinline__ int32_t wrapping(int32_t a) {
 
 template <Backend BACKEND, unsigned IDX>
 __device__ __forceinline__ uint32_t mod_small_nowrap_u32(uint32_t a) {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDACC__)
     if constexpr (BACKEND == Backend::INT8) {
         constexpr uint32_t p           = uint32_t(common::table::moduli<BACKEND, IDX>);
         constexpr uint32_t pow2_00_mod = 1U % p;
@@ -40,7 +40,7 @@ template <> __device__ __forceinline__ uint32_t mod_small_nowrap_u32<Backend::FP
 // |a| < 2^31 is guaranteed (#moduli <= common::threshold::S)
 template <Backend BACKEND, unsigned IDX>
 __device__ __forceinline__ int32_t mod_small_nowrap(int32_t a) {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDACC__)
     if constexpr (BACKEND == Backend::INT8) {
         constexpr uint32_t p           = uint32_t(common::table::moduli<BACKEND, IDX>);
         constexpr uint32_t pow2_00_mod = 1U % p;
@@ -70,7 +70,7 @@ __device__ __forceinline__ int32_t mod_small(int32_t a) {
 }
 template <> __device__ __forceinline__ int32_t mod_small<Backend::INT8, 0U>(int32_t a) { return wrapping<Backend::INT8, 0U>(a & 255); }
 template <> __device__ __forceinline__ int32_t mod_small<Backend::FP8, 1U>(int32_t a) { return wrapping<Backend::FP8, 1U>(a & 1023); }
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDACC__)
 template <> __device__ __forceinline__ int32_t mod_small<Backend::INT8, 1U>(int32_t a) {
     const uint32_t s = __dp4a(uint32_t(a), 0x01010101U, (a < 0) ? 254U : 0U);
     const uint32_t t = (s & 255U) + ((s >> 8));
@@ -80,7 +80,7 @@ template <> __device__ __forceinline__ int32_t mod_small<Backend::INT8, 1U>(int3
 
 template <Backend BACKEND, unsigned IDX>
 __device__ __forceinline__ int32_t reduce_mant(common::mant_t a) {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDACC__)
     if constexpr (BACKEND == Backend::INT8) {
         constexpr uint32_t p           = uint32_t(common::table::moduli<BACKEND, IDX>);
         constexpr uint32_t pow2_00_mod = 1U % p;
@@ -118,7 +118,7 @@ template <> __device__ __forceinline__ int32_t reduce_mant<Backend::FP8, 1U>(com
 
 template <Backend BACKEND, unsigned IDX>
 __device__ __forceinline__ int32_t reduce_mant_large(common::mant_t a) {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDACC__)
     if constexpr (BACKEND == Backend::INT8) {
         constexpr uint32_t p           = uint32_t(common::table::moduli<BACKEND, IDX>);
         constexpr uint32_t pow2_00_mod = 1U % p;
@@ -156,7 +156,7 @@ template <> __device__ __forceinline__ int32_t reduce_mant_large<Backend::FP8, 1
 
 template <Backend BACKEND, unsigned IDX>
 __device__ __forceinline__ int32_t reduce_exp(common::exp_t a) {
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDACC__)
     if constexpr (BACKEND == Backend::INT8) {
         constexpr uint32_t p           = uint32_t(common::table::moduli<BACKEND, IDX>);
         constexpr uint32_t pow2_00_mod = 1U % p;

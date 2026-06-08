@@ -14,7 +14,7 @@ template <typename T, Backend BACKEND, unsigned NUM_MODULI,
 __global__ void scaling_colwise(
     const unsigned rows_A,
     const T *const __restrict__ A, const size_t lda,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo, const size_t incA_lo,
     int16_t *const __restrict__ sftA //
 ) {

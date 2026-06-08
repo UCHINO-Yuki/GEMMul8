@@ -323,16 +323,6 @@ inline void calc_sft_rowwise_launch(
     constexpr dim3 threads_findmax(threads_x_findmax_tile,
                                    threads_y_findmax_tile);
 
-    if constexpr (common::isComplex<T>) {
-        const unsigned grid_findmax =
-            (rows_A + common::TILE_DIM - 1U) / common::TILE_DIM;
-
-        calc_sft_rowwise<T, BACKEND, NUM_MODULI, UPLO, DIAG>
-            <<<grid_findmax, threads_findmax, 0, stream>>>(
-                rows_A, cols_A, A, lda, sftA);
-        return;
-    }
-
     if (cols_A < rowwise_sft_split_threshold) {
         const unsigned grid_findmax = (rows_A + common::TILE_DIM - 1U) / common::TILE_DIM;
         calc_sft_rowwise<T, BACKEND, NUM_MODULI, UPLO, DIAG>

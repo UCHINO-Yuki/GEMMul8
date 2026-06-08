@@ -39,7 +39,7 @@ template <typename T, Backend BACKEND, unsigned NUM_MODULI,
 __device__ __forceinline__ void scaling_colwise_device(
     const unsigned rows_A,
     const T *const __restrict__ in,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4, const size_t incA_lo4,
     const int32_t sft //
 ) {

@@ -82,7 +82,7 @@ __device__ __forceinline__ __nv_fp8_e4m3 sub_ru_8bit(__nv_fp8_e4m3 a, __nv_fp8_e
 
 template <typename T, Backend BACKEND>
 __device__ __forceinline__ void extract_store_one_real(
-    common::matptr_t<common::low_t<BACKEND>, false> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, false> A_lo,
     const size_t idx,
     const T a,
     const int32_t sft //
@@ -93,7 +93,7 @@ __device__ __forceinline__ void extract_store_one_real(
 
 template <typename T, Backend BACKEND>
 __device__ __forceinline__ void extract_store_one_complex(
-    common::matptr_t<common::low_t<BACKEND>, true> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, true> A_lo,
     const size_t idx,
     const T a,
     const int32_t sft //
@@ -107,7 +107,7 @@ __device__ __forceinline__ void extract_store_one_complex(
 
 template <typename T, Backend BACKEND>
 __device__ __forceinline__ void extract_store_one(
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t idx,
     const T a,
     const int32_t sft //

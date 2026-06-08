@@ -13,12 +13,12 @@ template <typename T, Backend BACKEND, unsigned NUM_MODULI, bool CONJ>
 __global__ void scaling_rowwise_full_kernel(
     const unsigned rows_A, const unsigned cols_A,
     const T *const __restrict__ A, const size_t lda,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo, const size_t incA_lo,
     int16_t *const __restrict__ sftA //
 ) {
     using ValT               = decltype(trunc_scalbn<true, T, BACKEND, NUM_MODULI>::run(T{}, int32_t{}));
-    constexpr bool cast_flag = (sizeof(ValT) <= sizeof(T));
+    constexpr bool cast_flag = (sizeof(ValT) <= sizeof(T)) && common::isCUDA;
     using shm_t              = std::conditional_t<(cast_flag), ValT, T>;
 
     __shared__ shm_t tile[common::TILE_DIM][common::TILE_DIM + 1];
@@ -71,12 +71,12 @@ template <bool UPPER,
 __global__ void scaling_rowwise_tri_kernel(
     const unsigned rows_A, const unsigned cols_A,
     const T *const __restrict__ A, const size_t lda,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo, const size_t incA_lo,
     int16_t *const __restrict__ sftA //
 ) {
     using ValT               = decltype(trunc_scalbn<true, T, BACKEND, NUM_MODULI>::run(T{}, int32_t{}));
-    constexpr bool cast_flag = (sizeof(ValT) <= sizeof(T));
+    constexpr bool cast_flag = (sizeof(ValT) <= sizeof(T)) && common::isCUDA;
     using shm_t              = std::conditional_t<(cast_flag), ValT, T>;
 
     __shared__ shm_t tile[common::TILE_DIM][common::TILE_DIM + 1];

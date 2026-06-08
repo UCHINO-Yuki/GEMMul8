@@ -81,7 +81,7 @@ __device__ __forceinline__ void scaling_colwise_store4_complex(
 
 template <typename T, Backend BACKEND, unsigned NUM_MODULI>
 __device__ __forceinline__ void scaling_store_one_real(
-    common::matptr_t<common::low_t<BACKEND>, false> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, false> A_lo,
     const size_t idx,
     const size_t incA_lo,
     const T a,
@@ -97,7 +97,7 @@ __device__ __forceinline__ void scaling_store_one_real(
 
 template <typename T, Backend BACKEND, unsigned NUM_MODULI>
 __device__ __forceinline__ void scaling_store_one_complex(
-    common::matptr_t<common::low_t<BACKEND>, true> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, true> A_lo,
     const size_t idx,
     const size_t incA_lo,
     const T a,
@@ -115,7 +115,7 @@ __device__ __forceinline__ void scaling_store_one_complex(
 
 template <typename T, Backend BACKEND, unsigned NUM_MODULI>
 __device__ __forceinline__ void scaling_store_one(
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t idx,
     const size_t incA_lo,
     const T a,

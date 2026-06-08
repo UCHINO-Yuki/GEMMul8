@@ -308,6 +308,8 @@
         #define cublasZtrsm_v2_64 hipblasZtrsm_v2_64
     #endif
 
+    #define cublasSetStream         hipblasSetStream
+    #define cublasSetStream_v2      hipblasSetStream
     #define cublasGetStream         hipblasGetStream
     #define cublasGetStream_v2      hipblasGetStream
     #define cublasCreate            hipblasCreate
@@ -431,6 +433,8 @@
     #define __NV_SATFINITE        __HIP_SATFINITE
 
     #define cudaDeviceSynchronize             hipDeviceSynchronize
+    #define cudaStreamCreate                  hipStreamCreate
+    #define cudaStreamDestroy                 hipStreamDestroy
     #define cudaStreamSynchronize             hipStreamSynchronize
     #define cudaMemGetInfo                    hipMemGetInfo
     #define cudaGetDeviceProperties           hipGetDeviceProperties

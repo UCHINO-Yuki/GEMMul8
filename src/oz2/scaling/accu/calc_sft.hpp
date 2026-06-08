@@ -235,7 +235,7 @@ inline void calc_sft_before_sym_rowwise_launch(
 template <typename T, Backend BACKEND, unsigned NUM_MODULI, cublasFillMode_t UPLO>
 __global__ void calc_sft_after_rowwise(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc_hi,
     int16_t *const __restrict__ sftA //
 ) {
@@ -255,7 +255,7 @@ __global__ void calc_sft_after_rowwise(
 template <typename T, Backend BACKEND, unsigned NUM_MODULI, cublasFillMode_t UPLO>
 __global__ void calc_sft_after_rowwise_with_delta(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc_hi,
     const int16_t *const __restrict__ col_delta,
     int16_t *const __restrict__ sftA //
@@ -276,7 +276,7 @@ __global__ void calc_sft_after_rowwise_with_delta(
 template <typename T, Backend BACKEND, unsigned NUM_MODULI, cublasFillMode_t UPLO>
 __global__ void calc_sft_after_colwise(
     const unsigned m, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc_hi,
     int16_t *const __restrict__ sftA //
 ) {
@@ -295,7 +295,7 @@ __global__ void calc_sft_after_colwise(
 template <typename T, Backend BACKEND, unsigned NUM_MODULI, cublasFillMode_t UPLO>
 __global__ void calc_sft_after_colwise_with_delta(
     const unsigned m, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc_hi,
     const int16_t *const __restrict__ row_delta,
     int16_t *const __restrict__ sftA //
@@ -316,7 +316,7 @@ __global__ void calc_sft_after_colwise_with_delta(
 template <typename T, Backend BACKEND, unsigned NUM_MODULI, cublasFillMode_t UPLO>
 __global__ void calc_sft_after_rowwise_sym(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc_hi,
     common::hi_t<BACKEND> *const __restrict__ maxC //
 ) {
@@ -333,7 +333,7 @@ __global__ void calc_sft_after_rowwise_sym(
 template <typename T, Backend BACKEND, unsigned NUM_MODULI, cublasFillMode_t UPLO>
 __global__ void calc_sft_after_colwise_sym(
     const unsigned m, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc_hi,
     common::hi_t<BACKEND> *const __restrict__ maxC,
     int16_t *const __restrict__ sftA //
@@ -355,7 +355,7 @@ __global__ void calc_sft_after_colwise_sym(
 template <typename T, Backend BACKEND, cublasFillMode_t UPLO>
 __global__ void calc_sft_after_rowwise_sym_partial(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc_hi,
     common::hi_t<BACKEND> *const __restrict__ partial_amax //
 ) {
@@ -539,7 +539,7 @@ inline void calc_sft_before_rowwise_launch(
 template <typename T, Backend BACKEND, cublasFillMode_t UPLO>
 __global__ void calc_sft_after_rowwise_partial(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc_hi,
     common::hi_t<BACKEND> *const __restrict__ partial_amax //
 ) {
@@ -630,7 +630,7 @@ inline void calc_sft_after_rowwise_launch(
 template <typename T, Backend BACKEND, cublasFillMode_t UPLO>
 __global__ void calc_sft_after_rowwise_with_delta_partial(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc_hi,
     const int16_t *const __restrict__ col_delta,
     float *const __restrict__ partial_amax //

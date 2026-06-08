@@ -230,7 +230,7 @@ template <typename T, Backend BACKEND,
 __device__ __forceinline__ common::hi_t<BACKEND> find_max(
     const unsigned length,
     const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc,
     common::hi_t<BACKEND> *samax //
 ) {
@@ -487,7 +487,7 @@ __device__ __forceinline__ float find_max_tile_complex_8f(
 template <typename T, Backend BACKEND, cublasFillMode_t UPLO = CUBLAS_FILL_MODE_FULL>
 __device__ __forceinline__ common::hi_t<BACKEND> find_max_tile(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi, const size_t ldc,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi, const size_t ldc,
     common::hi_t<BACKEND> samax[][common::TILE_DIM + 1] //
 ) {
     if constexpr (common::isComplex<T>) {
@@ -893,7 +893,7 @@ __device__ __forceinline__ float find_max_tile_range_complex_8f(
 template <typename T, Backend BACKEND, cublasFillMode_t UPLO = CUBLAS_FILL_MODE_FULL>
 __device__ __forceinline__ common::hi_t<BACKEND> find_max_tile_range(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi, const size_t ldc,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi, const size_t ldc,
     common::hi_t<BACKEND> samax[][common::TILE_DIM + 1],
     const unsigned col_begin,
     const unsigned col_end //
@@ -1009,7 +1009,7 @@ template <typename T, Backend BACKEND,
 __device__ __forceinline__ float find_max_with_delta(
     const unsigned length,
     const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi,
     const size_t ldc,
     const int16_t *const __restrict__ delta,
     float *samax //
@@ -1303,7 +1303,7 @@ __device__ __forceinline__ float find_max_tile_complex_8f_with_delta(
 template <typename T, Backend BACKEND, cublasFillMode_t UPLO = CUBLAS_FILL_MODE_FULL>
 __device__ __forceinline__ float find_max_tile_with_delta(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi, const size_t ldc,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi, const size_t ldc,
     const int16_t *const __restrict__ delta,
     float samax[][common::TILE_DIM + 1] //
 ) {
@@ -1654,7 +1654,7 @@ __device__ __forceinline__ float find_max_tile_range_complex_8f_with_delta(
 template <typename T, Backend BACKEND, cublasFillMode_t UPLO = CUBLAS_FILL_MODE_FULL>
 __device__ __forceinline__ float find_max_tile_range_with_delta(
     const unsigned m, const unsigned n, const unsigned k,
-    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> __restrict__ C_hi, const size_t ldc,
+    common::matptr_t<common::hi_t<BACKEND>, common::isComplex<T>> C_hi, const size_t ldc,
     float samax[][common::TILE_DIM + 1],
     const int16_t *const __restrict__ delta,
     const unsigned col_begin,

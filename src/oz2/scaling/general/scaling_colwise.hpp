@@ -14,7 +14,7 @@ template <typename T, Backend BACKEND, unsigned NUM_MODULI, bool CONJ>
 __device__ __forceinline__ void scaling_colwise_full_device(
     const unsigned rows_A,
     const T *const __restrict__ in,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4, const size_t incA_lo4,
     const int32_t sft //
 ) {
@@ -89,7 +89,7 @@ template <typename T, Backend BACKEND, unsigned NUM_MODULI,
 __device__ __forceinline__ void scaling_colwise_upper_device(
     const unsigned rows_A,
     const T *const __restrict__ in,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4, const size_t incA_lo4,
     const int32_t sft //
 ) {
@@ -165,7 +165,7 @@ template <typename T, Backend BACKEND, unsigned NUM_MODULI,
 __device__ __forceinline__ void scaling_colwise_lower_device(
     const unsigned rows_A,
     const T *const __restrict__ in,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4, const size_t incA_lo4,
     const int32_t sft //
 ) {
@@ -272,7 +272,7 @@ __global__ void scaling_colwise_full_tiled_kernel(
     const unsigned cols_A,
     const T *const __restrict__ A,
     const size_t lda,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4,
     const size_t incA_lo4,
     const int16_t *const __restrict__ sftA //
@@ -352,7 +352,7 @@ __global__ void scaling_colwise_full_tiled_aligned_kernel(
     const unsigned cols_A,
     const T *const __restrict__ A,
     const size_t lda,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4,
     const size_t incA_lo4,
     const int16_t *const __restrict__ sftA //
@@ -395,7 +395,7 @@ __global__ void scaling_colwise_tri_tiled_kernel(
     const unsigned cols_A,
     const T *const __restrict__ A,
     const size_t lda,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4,
     const size_t incA_lo4,
     const int16_t *const __restrict__ sftA //

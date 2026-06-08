@@ -10,7 +10,7 @@ template <typename T, Backend BACKEND>
 __device__ __forceinline__ void extract_colwise_full_kernel(
     const unsigned rows_A,
     const T *const __restrict__ in,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4,
     const int32_t sft //
 ) {
@@ -81,7 +81,7 @@ template <typename T, Backend BACKEND, cublasDiagType_t DIAG>
 __device__ __forceinline__ void extract_colwise_upper_kernel(
     const unsigned rows_A,
     const T *const __restrict__ in,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4,
     const int32_t sft //
 ) {
@@ -154,7 +154,7 @@ template <typename T, Backend BACKEND, cublasDiagType_t DIAG>
 __device__ __forceinline__ void extract_colwise_lower_kernel(
     const unsigned rows_A,
     const T *const __restrict__ in,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4,
     const int32_t sft //
 ) {
@@ -255,7 +255,7 @@ template <typename T, Backend BACKEND, cublasFillMode_t UPLO, cublasDiagType_t D
 __global__ void extract_colwise(
     const unsigned rows_A,
     const T *const __restrict__ A, const size_t lda,
-    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> __restrict__ A_lo,
+    common::matptr_t<common::low_t<BACKEND>, common::isComplex<T>> A_lo,
     const size_t lda_lo4,
     int16_t *const __restrict__ sftA //
 ) {

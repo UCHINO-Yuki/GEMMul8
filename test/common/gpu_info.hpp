@@ -15,6 +15,9 @@
 #include <type_traits>
 #include <vector>
 
+#define GEMMUL8_TEST_STRINGIFY_IMPL(x) #x
+#define GEMMUL8_TEST_STRINGIFY(x)      GEMMUL8_TEST_STRINGIFY_IMPL(x)
+
 #ifdef PRINT
     #undef PRINT
 #endif
@@ -164,7 +167,8 @@ inline std::string getHipblasVersionString() {
         std::to_string(hipblasVersionPatch);
 
     #if defined(hipblasVersionTweak)
-    s += "." + std::to_string(hipblasVersionTweak);
+    s += ".";
+    s += GEMMUL8_TEST_STRINGIFY(hipblasVersionTweak);
     #endif
 
     return s;
@@ -181,7 +185,8 @@ inline std::string getHipblasLtVersionString() {
         std::to_string(HIPBLASLT_VERSION_PATCH);
 
     #if defined(HIPBLASLT_VERSION_TWEAK)
-    s += "." + std::to_string(HIPBLASLT_VERSION_TWEAK);
+    s += ".";
+    s += GEMMUL8_TEST_STRINGIFY(HIPBLASLT_VERSION_TWEAK);
     #endif
 
     return s;
