@@ -321,8 +321,32 @@ inline void scaling_accu(
 
         } else {
 
-            scaling::accu::scaling<TA, BACKEND, NUM_MODULI, UPLO_A, DIAG_A, SCAL_UPLO_C>(
-                stream, op_A, CUBLAS_SIDE_LEFT, m, n, k, A, lda, A_lo, lda_lo, incA_lo, sftA, C_hi, ldc_hi, fixed_deltaB);
+            if constexpr (FUNC == Func::trtrmm) {
+                if (op_A == CUBLAS_OP_N) {
+                    if (op_B == CUBLAS_OP_N) {
+                        constexpr cublasFillMode_t UPLO = (UPLO_A == UPLO_B) ? UPLO_A : UPLO_C;
+                        scaling::accu::scaling<TA, BACKEND, NUM_MODULI, UPLO_A, DIAG_A, UPLO>(
+                            stream, op_A, CUBLAS_SIDE_LEFT, m, n, k, A, lda, A_lo, lda_lo, incA_lo, sftA, C_hi, ldc_hi, fixed_deltaB);
+                    } else {
+                        constexpr cublasFillMode_t UPLO = ((UPLO_A == flip_uplo<UPLO_B>)) ? UPLO_A : UPLO_C;
+                        scaling::accu::scaling<TA, BACKEND, NUM_MODULI, UPLO_A, DIAG_A, UPLO>(
+                            stream, op_A, CUBLAS_SIDE_LEFT, m, n, k, A, lda, A_lo, lda_lo, incA_lo, sftA, C_hi, ldc_hi, fixed_deltaB);
+                    }
+                } else {
+                    if (op_B == CUBLAS_OP_N) {
+                        constexpr cublasFillMode_t UPLO = ((flip_uplo<UPLO_A> == UPLO_B)) ? flip_uplo<UPLO_A> : UPLO_C;
+                        scaling::accu::scaling<TA, BACKEND, NUM_MODULI, UPLO_A, DIAG_A, UPLO>(
+                            stream, op_A, CUBLAS_SIDE_LEFT, m, n, k, A, lda, A_lo, lda_lo, incA_lo, sftA, C_hi, ldc_hi, fixed_deltaB);
+                    } else {
+                        constexpr cublasFillMode_t UPLO = ((flip_uplo<UPLO_A> == flip_uplo<UPLO_B>)) ? flip_uplo<UPLO_A> : UPLO_C;
+                        scaling::accu::scaling<TA, BACKEND, NUM_MODULI, UPLO_A, DIAG_A, UPLO>(
+                            stream, op_A, CUBLAS_SIDE_LEFT, m, n, k, A, lda, A_lo, lda_lo, incA_lo, sftA, C_hi, ldc_hi, fixed_deltaB);
+                    }
+                }
+            } else {
+                scaling::accu::scaling<TA, BACKEND, NUM_MODULI, UPLO_A, DIAG_A, SCAL_UPLO_C>(
+                    stream, op_A, CUBLAS_SIDE_LEFT, m, n, k, A, lda, A_lo, lda_lo, incA_lo, sftA, C_hi, ldc_hi, fixed_deltaB);
+            }
         }
 
         if (enable_skip_scalA) {
@@ -350,8 +374,32 @@ inline void scaling_accu(
 
         } else {
 
-            scaling::accu::scaling<TB, BACKEND, NUM_MODULI, UPLO_B, DIAG_B, SCAL_UPLO_C>(
-                stream, op_B, CUBLAS_SIDE_RIGHT, m, n, k, B, ldb, B_lo, ldb_lo, incB_lo, sftB, C_hi, ldc_hi, fixed_deltaA);
+            if constexpr (FUNC == Func::trtrmm) {
+                if (op_A == CUBLAS_OP_N) {
+                    if (op_B == CUBLAS_OP_N) {
+                        constexpr cublasFillMode_t UPLO = (UPLO_A == UPLO_B) ? UPLO_A : UPLO_C;
+                        scaling::accu::scaling<TB, BACKEND, NUM_MODULI, UPLO_B, DIAG_B, UPLO>(
+                            stream, op_B, CUBLAS_SIDE_RIGHT, m, n, k, B, ldb, B_lo, ldb_lo, incB_lo, sftB, C_hi, ldc_hi, fixed_deltaA);
+                    } else {
+                        constexpr cublasFillMode_t UPLO = ((UPLO_A == flip_uplo<UPLO_B>)) ? UPLO_A : UPLO_C;
+                        scaling::accu::scaling<TB, BACKEND, NUM_MODULI, UPLO_B, DIAG_B, UPLO>(
+                            stream, op_B, CUBLAS_SIDE_RIGHT, m, n, k, B, ldb, B_lo, ldb_lo, incB_lo, sftB, C_hi, ldc_hi, fixed_deltaA);
+                    }
+                } else {
+                    if (op_B == CUBLAS_OP_N) {
+                        constexpr cublasFillMode_t UPLO = ((flip_uplo<UPLO_A> == UPLO_B)) ? flip_uplo<UPLO_A> : UPLO_C;
+                        scaling::accu::scaling<TB, BACKEND, NUM_MODULI, UPLO_B, DIAG_B, UPLO>(
+                            stream, op_B, CUBLAS_SIDE_RIGHT, m, n, k, B, ldb, B_lo, ldb_lo, incB_lo, sftB, C_hi, ldc_hi, fixed_deltaA);
+                    } else {
+                        constexpr cublasFillMode_t UPLO = ((flip_uplo<UPLO_A> == flip_uplo<UPLO_B>)) ? flip_uplo<UPLO_A> : UPLO_C;
+                        scaling::accu::scaling<TB, BACKEND, NUM_MODULI, UPLO_B, DIAG_B, UPLO>(
+                            stream, op_B, CUBLAS_SIDE_RIGHT, m, n, k, B, ldb, B_lo, ldb_lo, incB_lo, sftB, C_hi, ldc_hi, fixed_deltaA);
+                    }
+                }
+            } else {
+                scaling::accu::scaling<TB, BACKEND, NUM_MODULI, UPLO_B, DIAG_B, SCAL_UPLO_C>(
+                    stream, op_B, CUBLAS_SIDE_RIGHT, m, n, k, B, ldb, B_lo, ldb_lo, incB_lo, sftB, C_hi, ldc_hi, fixed_deltaA);
+            }
         }
 
         if (enable_skip_scalB) {

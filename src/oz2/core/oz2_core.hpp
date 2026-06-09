@@ -96,7 +96,17 @@ inline std::vector<double> oz2_core(
     int8_t *const C_work_base = reinterpret_cast<int8_t *>(C_mid);
 
     // Set handle
-    common::set_handle<BACKEND, FUNC>(stream, handle, ldc_hi, n_work, lda_lo, ldb_lo, ldb_lo, ldc_hi, lwork_blas, UPLO_A, UPLO_B);
+    cublasFillMode_t UPLO_A_handle = UPLO_A;
+    cublasFillMode_t UPLO_B_handle = UPLO_B;
+    if constexpr (KIND == common::MatMulKind::Trtrmm) {
+        if (op_A != CUBLAS_OP_N) {
+            UPLO_A_handle = (UPLO_A == CUBLAS_FILL_MODE_UPPER) ? CUBLAS_FILL_MODE_LOWER : CUBLAS_FILL_MODE_UPPER;
+        }
+        if (op_B != CUBLAS_OP_N) {
+            UPLO_B_handle = (UPLO_B == CUBLAS_FILL_MODE_UPPER) ? CUBLAS_FILL_MODE_LOWER : CUBLAS_FILL_MODE_UPPER;
+        }
+    }
+    common::set_handle<BACKEND, FUNC>(stream, handle, ldc_hi, n_work, lda_lo, ldb_lo, ldb_lo, ldc_hi, lwork_blas, UPLO_A_handle, UPLO_B_handle);
 
     // set timer
     std::vector<double> timer(4, 0.0);
