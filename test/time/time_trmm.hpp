@@ -10,6 +10,7 @@ void check_time(
     cublasSideMode_t side,
     cublasFillMode_t uplo,
     cublasOperation_t trans,
+    cublasDiagType_t diag,
     const bool run_Ozaki2_I8,
     const bool run_Ozaki2_F8,
     const bool run_Ozaki1_I8,

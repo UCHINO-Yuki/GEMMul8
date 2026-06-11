@@ -53,8 +53,8 @@ void check_accuracy(
 
     std::ofstream outFile(fileName);
 
-    const unsigned num_moduli_min = testTraits<T>::NUM_MODULI_MIN;
-    const unsigned num_moduli_max = testTraits<T>::NUM_MODULI_MAX;
+    const unsigned num_moduli_min = testTraits<T>::NUM_MODULI_MIN_accuracy;
+    const unsigned num_moduli_max = testTraits<T>::NUM_MODULI_MAX_accuracy;
 
     std::string num_moduli_str = std::string("");
     for (unsigned num_moduli = num_moduli_min; num_moduli <= num_moduli_max; ++num_moduli) {

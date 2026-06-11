@@ -129,12 +129,12 @@ void check_time(
     cublasFillMode_t uplo_B,
     cublasOperation_t trans_A,
     cublasOperation_t trans_B,
+    cublasDiagType_t diag_A,
+    cublasDiagType_t diag_B,
     const bool run_Ozaki2_I8,
     const bool run_Ozaki2_F8,
     const bool run_Ozaki1_I8 //
 ) {
-    constexpr cublasDiagType_t diag_A = CUBLAS_DIAG_NON_UNIT;
-    constexpr cublasDiagType_t diag_B = CUBLAS_DIAG_NON_UNIT;
 
     if (uplo_A != CUBLAS_FILL_MODE_UPPER && uplo_A != CUBLAS_FILL_MODE_LOWER) {
         assert(false && "TRTRMM requires uplo_A = UPPER or LOWER.");
@@ -645,22 +645,22 @@ void check_time(
 
 template void check_time<float>(
     std::string &, std::string &, cublasFillMode_t, cublasFillMode_t,
-    cublasOperation_t, cublasOperation_t,
+    cublasOperation_t, cublasOperation_t, cublasDiagType_t, cublasDiagType_t,
     const bool, const bool, const bool);
 
 template void check_time<double>(
     std::string &, std::string &, cublasFillMode_t, cublasFillMode_t,
-    cublasOperation_t, cublasOperation_t,
+    cublasOperation_t, cublasOperation_t, cublasDiagType_t, cublasDiagType_t,
     const bool, const bool, const bool);
 
 template void check_time<cuFloatComplex>(
     std::string &, std::string &, cublasFillMode_t, cublasFillMode_t,
-    cublasOperation_t, cublasOperation_t,
+    cublasOperation_t, cublasOperation_t, cublasDiagType_t, cublasDiagType_t,
     const bool, const bool, const bool);
 
 template void check_time<cuDoubleComplex>(
     std::string &, std::string &, cublasFillMode_t, cublasFillMode_t,
-    cublasOperation_t, cublasOperation_t,
+    cublasOperation_t, cublasOperation_t, cublasDiagType_t, cublasDiagType_t,
     const bool, const bool, const bool);
 
 } // namespace bench::time::trtrmm

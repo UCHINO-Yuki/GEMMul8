@@ -11,6 +11,8 @@ void check_time(
     cublasFillMode_t uplo_B,
     cublasOperation_t trans_A,
     cublasOperation_t trans_B,
+    cublasDiagType_t diag_A,
+    cublasDiagType_t diag_B,
     const bool run_Ozaki2_I8,
     const bool run_Ozaki2_F8,
     const bool run_Ozaki1_I8);

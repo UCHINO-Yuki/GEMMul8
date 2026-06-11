@@ -4,6 +4,11 @@
 
 COMPILE_INFO := compile_info
 
+HOST_CXX ?= $(CXX)
+ifeq ($(strip $(HOST_CXX)),)
+HOST_CXX := c++
+endif
+
 info:
 	@{ \
 	    echo ""; \
@@ -15,6 +20,16 @@ info:
 	        echo "HIP_PATH     : $(HIP_PATH)"; \
 	    fi; \
 	    echo "COMPILER     : $(COMPILER)"; \
+		host_cxx="$(HOST_CXX)"; \
+	    host_cxx_path="$$(command -v "$$host_cxx" 2>/dev/null || true)"; \
+	    [ -n "$$host_cxx_path" ] || host_cxx_path="$$host_cxx"; \
+	    host_cxx_version="$$( \
+	        "$$host_cxx" --version 2>/dev/null | head -n 1 \
+	    )"; \
+	    [ -n "$$host_cxx_version" ] || host_cxx_version="unknown"; \
+	    echo "HOST_CXX     : $$host_cxx_path"; \
+	    echo "HOST_CXX_VER : $$host_cxx_version"; \
+	    echo "KERNEL_BUILD : $$kernel_build"; \
 	    echo "GPU_ARCH     : $(GPU_ARCH)"; \
 		cpu_model="$$( \
 	        if command -v lscpu >/dev/null 2>&1; then \

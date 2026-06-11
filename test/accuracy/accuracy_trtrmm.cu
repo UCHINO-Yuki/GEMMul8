@@ -70,13 +70,12 @@ void check_accuracy(
     cublasFillMode_t uplo_B,
     cublasOperation_t trans_A,
     cublasOperation_t trans_B,
+    cublasDiagType_t diag_A,
+    cublasDiagType_t diag_B,
     const bool run_Ozaki2_I8,
     const bool run_Ozaki2_F8,
     const bool run_Ozaki1_I8 //
 ) {
-    constexpr cublasDiagType_t diag_A = CUBLAS_DIAG_NON_UNIT;
-    constexpr cublasDiagType_t diag_B = CUBLAS_DIAG_NON_UNIT;
-
     if (uplo_A != CUBLAS_FILL_MODE_UPPER && uplo_A != CUBLAS_FILL_MODE_LOWER) {
         assert(false && "TRTRMM requires uplo_A = UPPER or LOWER.");
         return;
@@ -110,8 +109,8 @@ void check_accuracy(
 
     std::ofstream outFile(fileName);
 
-    const unsigned num_moduli_min = testTraits<T>::NUM_MODULI_MIN;
-    const unsigned num_moduli_max = testTraits<T>::NUM_MODULI_MAX;
+    const unsigned num_moduli_min = testTraits<T>::NUM_MODULI_MIN_accuracy;
+    const unsigned num_moduli_max = testTraits<T>::NUM_MODULI_MAX_accuracy;
 
     std::string num_moduli_str = std::string("");
     for (unsigned num_moduli = num_moduli_min; num_moduli <= num_moduli_max; ++num_moduli) {
@@ -576,22 +575,22 @@ void check_accuracy(
 
 template void check_accuracy<float>(
     std::string &, std::string &, cublasFillMode_t, cublasFillMode_t,
-    cublasOperation_t, cublasOperation_t,
+    cublasOperation_t, cublasOperation_t, cublasDiagType_t, cublasDiagType_t,
     const bool, const bool, const bool);
 
 template void check_accuracy<double>(
     std::string &, std::string &, cublasFillMode_t, cublasFillMode_t,
-    cublasOperation_t, cublasOperation_t,
+    cublasOperation_t, cublasOperation_t, cublasDiagType_t, cublasDiagType_t,
     const bool, const bool, const bool);
 
 template void check_accuracy<cuFloatComplex>(
     std::string &, std::string &, cublasFillMode_t, cublasFillMode_t,
-    cublasOperation_t, cublasOperation_t,
+    cublasOperation_t, cublasOperation_t, cublasDiagType_t, cublasDiagType_t,
     const bool, const bool, const bool);
 
 template void check_accuracy<cuDoubleComplex>(
     std::string &, std::string &, cublasFillMode_t, cublasFillMode_t,
-    cublasOperation_t, cublasOperation_t,
+    cublasOperation_t, cublasOperation_t, cublasDiagType_t, cublasDiagType_t,
     const bool, const bool, const bool);
 
 } // namespace bench::accuracy::trtrmm

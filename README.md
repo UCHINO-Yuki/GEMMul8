@@ -20,6 +20,7 @@ This design enables bit-wise reproducible results while using low-precision matr
   - [Routine options](#routine-options)
   - [Precision options](#precision-options)
   - [Disable options](#disable-options)
+  - [BLAS parameter options](#blas-parameter-options)
   - [Examples](#examples)
 - [Usage](#usage)
   - [1. Direct Usage (Normal mode)](#1-direct-usage-normal-mode)
@@ -192,20 +193,50 @@ make run MODE="<test-option>... <routine-option>... <precision-option>... [disab
 | `no_Ozaki2_FP8`  | Disable Ozaki-II FP8 tests  |
 | `no_Ozaki1_INT8` | Disable Ozaki-I INT8 tests  |
 
+### BLAS parameter options
+
+By default, the test driver runs all supported combinations of BLAS parameters for each selected routine.
+The following options can be used to restrict the tested parameter combinations.
+
+| Option       | Values                   | Applies to                                                                         |
+| :----------- | :----------------------- | :--------------------------------------------------------------------------------- |
+| `trans=...`  | `all`, `N`, `T`, `C`     | `SYRK`, `SYR2K`, `SYRKX`, `HERK`, `HER2K`, `HERKX`, `TRMM`, `TRSM`                 |
+| `transA=...` | `all`, `N`, `T`, `C`     | `GEMM`, `TRTRMM`                                                                   |
+| `transB=...` | `all`, `N`, `T`, `C`     | `GEMM`, `TRTRMM`                                                                   |
+| `uplo=...`   | `all`, `upper`, `lower`  | `SYRK`, `SYR2K`, `SYRKX`, `HERK`, `HER2K`, `HERKX`, `SYMM`, `HEMM`, `TRMM`, `TRSM` |
+| `uploA=...`  | `all`, `upper`, `lower`  | `TRTRMM`                                                                           |
+| `uploB=...`  | `all`, `upper`, `lower`  | `TRTRMM`                                                                           |
+| `diag=...`   | `all`, `nonunit`, `unit` | `TRMM`, `TRSM`                                                                     |
+| `diagA=...`  | `all`, `nonunit`, `unit` | `TRTRMM`                                                                           |
+| `diagB=...`  | `all`, `nonunit`, `unit` | `TRTRMM`                                                                           |
+| `side=...`   | `all`, `left`, `right`   | `SYMM`, `HEMM`, `TRMM`, `TRSM`                                                     |
+
+Short aliases are also accepted:
+
+| Parameter         | Aliases  |
+| :---------------- | :------- |
+| `all`             | `A`      |
+| `upper`, `lower`  | `U`, `L` |
+| `left`, `right`   | `L`, `R` |
+| `nonunit`, `unit` | `N`, `U` |
+
+For `SYRK`, `SYR2K`, and `SYRKX`, only `trans=N` and `trans=T` are used.
+For `HERK`, `HER2K`, and `HERKX`, only `trans=N` and `trans=C` are used.
+
 ### Examples
 
 ```bash
-# Run FP64 GEMM accuracy tests for square matrices
-make run MODE="accuracy_square GEMM D"
+# Run only non-transposed FP64 GEMM accuracy tests
+make run MODE="accuracy_rectangle GEMM D transA=N transB=N"
 
-# Run FP32 and FP64 timing tests for rectangular GEMM
-make run MODE="time_rectangle GEMM S D"
+# Run lower-triangular SYRK timing tests only
+make run MODE="time_square SYRK D uplo=lower trans=N"
 
-# Run complex Hermitian timing tests
-make run MODE="time_square HEMM HERK HER2K HERKX C Z"
+# Run left-side upper-triangular TRSM timing tests with non-unit diagonal
+make run MODE="time_square TRSM D side=left uplo=upper trans=N diag=nonunit"
 
-# Run triangular-operation timing tests without Ozaki-I
-make run MODE="time_square TRMM TRSM TRTRMM S D C Z no_Ozaki1_INT8"
+# Run one TRTRMM parameter subset
+make run MODE="time_square TRTRMM Z uploA=upper uploB=lower transA=N transB=C diagA=nonunit diagB=unit"
 ```
 
 ## Usage

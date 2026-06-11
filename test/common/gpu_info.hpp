@@ -159,6 +159,27 @@ inline std::string formatLibraryVersion(size_t v) {
            std::to_string(patch);
 }
 
+inline std::string getHostCompilerString() {
+#if defined(__INTEL_LLVM_COMPILER)
+    return "Intel oneAPI DPC++/C++ " +
+           std::to_string(__INTEL_LLVM_COMPILER);
+#elif defined(__INTEL_COMPILER)
+    return "Intel C++ " +
+           std::to_string(__INTEL_COMPILER);
+#elif defined(__clang__)
+    return std::string("Clang ") + __clang_version__;
+#elif defined(__GNUC__)
+    return "GCC " +
+           std::to_string(__GNUC__) + "." +
+           std::to_string(__GNUC_MINOR__) + "." +
+           std::to_string(__GNUC_PATCHLEVEL__);
+#elif defined(_MSC_VER)
+    return "MSVC " + std::to_string(_MSC_VER);
+#else
+    return "unknown";
+#endif
+}
+
 inline std::string getHipblasVersionString() {
 #if defined(hipblasVersionMajor) && defined(hipblasVersionMinor) && defined(hipblasVersionPatch)
     std::string s =
@@ -222,6 +243,7 @@ inline std::string printEnvironmentInfo(const std::string &dateTime) {
     PRINT(outFile, "Device ID: " + std::to_string(dev));
     PRINT(outFile, "Compute Capability: " +
                        std::to_string(cc_major) + "." + std::to_string(cc_minor));
+    PRINT(outFile, "Host Compiler: " + getHostCompilerString());
 
 #if defined(GEMMUL8_GPUINFO_USE_HIP)
     PRINT(outFile, "HIP Arch Name: " + getHipArchName(dev));

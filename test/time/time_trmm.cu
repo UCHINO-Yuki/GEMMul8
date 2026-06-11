@@ -108,12 +108,12 @@ void check_time(
     cublasSideMode_t side,
     cublasFillMode_t uplo,
     cublasOperation_t trans,
+    cublasDiagType_t diag,
     const bool run_Ozaki2_I8,
     const bool run_Ozaki2_F8,
     const bool run_Ozaki1_I8,
     const bool is_square //
 ) {
-    constexpr cublasDiagType_t diag = CUBLAS_DIAG_NON_UNIT;
 
     std::string square_tag = is_square ? std::string("square_") : std::string("");
     std::string fileName   = std::string("oz2_results_") +
@@ -579,22 +579,22 @@ void check_time(
 
 template void check_time<float>(
     std::string &, std::string &,
-    cublasSideMode_t, cublasFillMode_t, cublasOperation_t,
+    cublasSideMode_t, cublasFillMode_t, cublasOperation_t, cublasDiagType_t,
     const bool, const bool, const bool, const bool);
 
 template void check_time<double>(
     std::string &, std::string &,
-    cublasSideMode_t, cublasFillMode_t, cublasOperation_t,
+    cublasSideMode_t, cublasFillMode_t, cublasOperation_t, cublasDiagType_t,
     const bool, const bool, const bool, const bool);
 
 template void check_time<cuFloatComplex>(
     std::string &, std::string &,
-    cublasSideMode_t, cublasFillMode_t, cublasOperation_t,
+    cublasSideMode_t, cublasFillMode_t, cublasOperation_t, cublasDiagType_t,
     const bool, const bool, const bool, const bool);
 
 template void check_time<cuDoubleComplex>(
     std::string &, std::string &,
-    cublasSideMode_t, cublasFillMode_t, cublasOperation_t,
+    cublasSideMode_t, cublasFillMode_t, cublasOperation_t, cublasDiagType_t,
     const bool, const bool, const bool, const bool);
 
 } // namespace bench::time::trmm

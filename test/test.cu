@@ -24,47 +24,244 @@
 #include "accuracy/accuracy_trtrmm.hpp"
 #include "accuracy/accuracy_trsm.hpp"
 
+#include <optional>
+#include <cctype>
+#include <stdexcept>
+
+inline std::string upper_string(std::string s) {
+    for (char &c : s) {
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    return s;
+}
+
+inline bool split_key_value(
+    const std::string &arg,
+    std::string &key,
+    std::string &value //
+) {
+    const auto pos = arg.find('=');
+    if (pos == std::string::npos) return false;
+
+    key   = arg.substr(0, pos);
+    value = arg.substr(pos + 1);
+    key   = upper_string(key);
+    value = upper_string(value);
+    return true;
+}
+
+inline std::vector<cublasFillMode_t> parse_uplo_list(const std::string &value) {
+    if (value == "ALL" || value == "A") {
+        return {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER};
+    }
+    if (value == "UPPER" || value == "U") {
+        return {CUBLAS_FILL_MODE_UPPER};
+    }
+    if (value == "LOWER" || value == "L") {
+        return {CUBLAS_FILL_MODE_LOWER};
+    }
+
+    throw std::runtime_error("invalid uplo option: " + value);
+}
+
+inline std::vector<cublasSideMode_t> parse_side_list(const std::string &value) {
+    if (value == "ALL" || value == "A") {
+        return {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT};
+    }
+    if (value == "LEFT" || value == "L") {
+        return {CUBLAS_SIDE_LEFT};
+    }
+    if (value == "RIGHT" || value == "R") {
+        return {CUBLAS_SIDE_RIGHT};
+    }
+
+    throw std::runtime_error("invalid side option: " + value);
+}
+
+inline std::vector<cublasOperation_t> parse_trans_list(const std::string &value) {
+    if (value == "ALL" || value == "A") {
+        return {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C};
+    }
+    if (value == "N" || value == "NO" || value == "NONTRANS") {
+        return {CUBLAS_OP_N};
+    }
+    if (value == "T" || value == "TRANS") {
+        return {CUBLAS_OP_T};
+    }
+    if (value == "C" || value == "CONJ" || value == "CONJTRANS") {
+        return {CUBLAS_OP_C};
+    }
+
+    throw std::runtime_error("invalid trans option: " + value);
+}
+
+inline std::vector<cublasDiagType_t> parse_diag_list(const std::string &value) {
+    if (value == "ALL" || value == "A") {
+        return {CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT};
+    }
+    if (value == "NONUNIT" || value == "NON_UNIT" || value == "N") {
+        return {CUBLAS_DIAG_NON_UNIT};
+    }
+    if (value == "UNIT" || value == "U") {
+        return {CUBLAS_DIAG_UNIT};
+    }
+
+    throw std::runtime_error("invalid diag option: " + value);
+}
+
+template <typename F>
+inline void for_each_gemm_param(
+    const std::vector<cublasOperation_t> &trans_A_list,
+    const std::vector<cublasOperation_t> &trans_B_list,
+    F f //
+) {
+    for (auto trans_A : trans_A_list) {
+        for (auto trans_B : trans_B_list) {
+            f(trans_A, trans_B);
+        }
+    }
+}
+
+template <typename F>
+inline void for_each_side_uplo_param(
+    const std::vector<cublasSideMode_t> &side_list,
+    const std::vector<cublasFillMode_t> &uplo_list,
+    F f //
+) {
+    for (auto side : side_list) {
+        for (auto uplo : uplo_list) {
+            f(uplo, side);
+        }
+    }
+}
+
+template <typename F>
+inline void for_each_syr_param(
+    const std::vector<cublasFillMode_t> &uplo_list,
+    const std::vector<cublasOperation_t> &trans_list,
+    F f //
+) {
+    for (auto uplo : uplo_list) {
+        for (auto trans : trans_list) {
+            // SYRK/SYR2K/SYRKX use N or T in the current tests.
+            if (trans == CUBLAS_OP_C) continue;
+            f(uplo, trans);
+        }
+    }
+}
+
+template <typename F>
+inline void for_each_her_param(
+    const std::vector<cublasFillMode_t> &uplo_list,
+    const std::vector<cublasOperation_t> &trans_list,
+    F f //
+) {
+    for (auto uplo : uplo_list) {
+        for (auto trans : trans_list) {
+            // HERK/HER2K/HERKX use N or C in the current tests.
+            if (trans == CUBLAS_OP_T) continue;
+            f(uplo, trans);
+        }
+    }
+}
+
+template <typename F>
+inline void for_each_tri_param(
+    const std::vector<cublasSideMode_t> &side_list,
+    const std::vector<cublasFillMode_t> &uplo_list,
+    const std::vector<cublasOperation_t> &trans_list,
+    const std::vector<cublasDiagType_t> &diag_list,
+    F f //
+) {
+    for (auto side : side_list) {
+        for (auto uplo : uplo_list) {
+            for (auto trans : trans_list) {
+                for (auto diag : diag_list) {
+                    f(side, uplo, trans, diag);
+                }
+            }
+        }
+    }
+}
+
+template <typename F>
+inline void for_each_trtrmm_param(
+    const std::vector<cublasFillMode_t> &uplo_A_list,
+    const std::vector<cublasFillMode_t> &uplo_B_list,
+    const std::vector<cublasOperation_t> &trans_A_list,
+    const std::vector<cublasOperation_t> &trans_B_list,
+    const std::vector<cublasDiagType_t> &diag_A_list,
+    const std::vector<cublasDiagType_t> &diag_B_list,
+    F f //
+) {
+    for (auto uplo_A : uplo_A_list) {
+        for (auto uplo_B : uplo_B_list) {
+            for (auto trans_A : trans_A_list) {
+                for (auto trans_B : trans_B_list) {
+                    for (auto diag_A : diag_A_list) {
+                        for (auto diag_B : diag_B_list) {
+                            f(uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 void print_options(const char *prog) {
     std::cout
         << "\nUsage:\n"
         << "  " << prog << " <test-option>... <routine-option>... [disable-option]...\n"
         << "\n"
         << "Test options:\n"
-        << "  accuracy_square     Run accuracy tests for square matrices (n = 8192)\n"
-        << "  accuracy_rectangle  Run accuracy tests for rectangular matrices\n"
-        << "  time_square         Run timing tests for square matrices\n"
-        << "  time_rectangle      Run timing tests for rectangular matrices\n"
+        << "  accuracy_square           Run accuracy tests for square matrices (n = 8192)\n"
+        << "  accuracy_rectangle        Run accuracy tests for rectangular matrices\n"
+        << "  time_square               Run timing tests for square matrices\n"
+        << "  time_rectangle            Run timing tests for rectangular matrices\n"
         << "\n"
         << "Routine options:\n"
-        << "  GEMM                Run GEMM\n"
-        << "  SYMM                Run SYMM\n"
-        << "  SYRK                Run SYRK\n"
-        << "  SYR2K               Run SYR2K\n"
-        << "  SYRKX               Run SYRKX\n"
-        << "  HEMM                Run HEMM\n"
-        << "  HERK                Run HERK\n"
-        << "  HER2K               Run HER2K\n"
-        << "  HERKX               Run HERKX\n"
-        << "  TRMM                Run TRMM\n"
-        << "  TRTRMM              Run TRTRMM\n"
-        << "  TRSM                Run TRSM\n"
+        << "  GEMM                      Run GEMM\n"
+        << "  SYMM                      Run SYMM\n"
+        << "  SYRK                      Run SYRK\n"
+        << "  SYR2K                     Run SYR2K\n"
+        << "  SYRKX                     Run SYRKX\n"
+        << "  HEMM                      Run HEMM\n"
+        << "  HERK                      Run HERK\n"
+        << "  HER2K                     Run HER2K\n"
+        << "  HERKX                     Run HERKX\n"
+        << "  TRMM                      Run TRMM\n"
+        << "  TRTRMM                    Run TRTRMM\n"
+        << "  TRSM                      Run TRSM\n"
         << "\n"
         << "Precision options:\n"
-        << "  S                   Run single-precision operations\n"
-        << "  D                   Run double-precision operations\n"
-        << "  C                   Run single-precision complex operations\n"
-        << "  Z                   Run double-precision complex operations\n"
+        << "  S                         Run single-precision operations\n"
+        << "  D                         Run double-precision operations\n"
+        << "  C                         Run single-precision complex operations\n"
+        << "  Z                         Run double-precision complex operations\n"
+        << "\n"
+        << "BLAS parameter options:\n"
+        << "  trans=all|N|T|C           for SYRK/SYR2K/SYRKX/HERK/HER2K/HERKX/TRSM/TRMM\n"
+        << "  transA=all|N|T|C          for GEMM/TRTRMM\n"
+        << "  transB=all|N|T|C          for GEMM/TRTRMM\n"
+        << "  uplo=all|upper|lower      for SYMM/SYRK/SYR2K/SYRKX/HEMM/HERK/HER2K/HERKX/TRSM/TRMM\n"
+        << "  uploA=all|upper|lower     for TRTRMM\n"
+        << "  uploB=all|upper|lower     for TRTRMM\n"
+        << "  diag=all|nonunit|unit     for TRSM/TRMM\n"
+        << "  diag_A=all|nonunit|unit   for TRTRMM\n"
+        << "  diag_B=all|nonunit|unit   for TRTRMM\n"
+        << "  side=all|left|right       for SYMM/HEMM/TRSM/TRMM\n"
         << "\n"
         << "Disable options:\n"
-        << "  no_Ozaki2_INT8      Disable Ozaki-II INT8\n"
-        << "  no_Ozaki2_FP8       Disable Ozaki-II FP8\n"
-        << "  no_Ozaki1_INT8      Disable Ozaki-I INT8\n"
+        << "  no_Ozaki2_INT8            Disable Ozaki-II INT8\n"
+        << "  no_Ozaki2_FP8             Disable Ozaki-II FP8\n"
+        << "  no_Ozaki1_INT8            Disable Ozaki-I INT8\n"
         << "\n"
         << "Help options:\n"
         << "  -h, --help, help Show this message and exit\n"
         << "\n"
         << "Examples:\n"
-        << "  " << prog << " accuracy_rectangle GEMM C Z\n"
+        << "  " << prog << " accuracy_rectangle GEMM C Z transA=N transB=N\n"
         << "  " << prog << " time_square GEMM S D no_Ozaki1_INT8\n"
         << "\n";
 }
@@ -106,11 +303,87 @@ int main(int argc, char **argv) {
     bool run_TRTRMM = false;
     bool run_TRSM   = false;
 
+    std::vector<cublasOperation_t> trans_list   = {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C};
+    std::vector<cublasOperation_t> trans_A_list = {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C};
+    std::vector<cublasOperation_t> trans_B_list = {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C};
+    std::vector<cublasFillMode_t> uplo_list     = {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER};
+    std::vector<cublasFillMode_t> uplo_A_list   = {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER};
+    std::vector<cublasFillMode_t> uplo_B_list   = {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER};
+    std::vector<cublasDiagType_t> diag_list     = {CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT};
+    std::vector<cublasDiagType_t> diag_A_list   = {CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT};
+    std::vector<cublasDiagType_t> diag_B_list   = {CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT};
+    std::vector<cublasSideMode_t> side_list     = {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT};
+
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "-h" || arg == "--help" || arg == "help") {
             print_options(argv[0]);
             return 0;
+        }
+
+        std::string key;
+        std::string value;
+
+        if (split_key_value(arg, key, value)) {
+            try {
+                if (key == "UPLO") {
+                    uplo_list   = parse_uplo_list(value);
+                    uplo_A_list = uplo_list;
+                    uplo_B_list = uplo_list;
+                    continue;
+                }
+                if (key == "UPLO_A" || key == "UPLOA") {
+                    uplo_A_list = parse_uplo_list(value);
+                    continue;
+                }
+                if (key == "UPLO_B" || key == "UPLOB") {
+                    uplo_B_list = parse_uplo_list(value);
+                    continue;
+                }
+
+                if (key == "SIDE") {
+                    side_list = parse_side_list(value);
+                    continue;
+                }
+
+                if (key == "TRANS") {
+                    trans_list   = parse_trans_list(value);
+                    trans_A_list = trans_list;
+                    trans_B_list = trans_list;
+                    continue;
+                }
+                if (key == "TRANS_A" || key == "TRANSA") {
+                    trans_A_list = parse_trans_list(value);
+                    continue;
+                }
+                if (key == "TRANS_B" || key == "TRANSB") {
+                    trans_B_list = parse_trans_list(value);
+                    continue;
+                }
+
+                if (key == "DIAG") {
+                    diag_list   = parse_diag_list(value);
+                    diag_A_list = diag_list;
+                    diag_B_list = diag_list;
+                    continue;
+                }
+                if (key == "DIAG_A" || key == "DIAGA") {
+                    diag_A_list = parse_diag_list(value);
+                    continue;
+                }
+                if (key == "DIAG_B" || key == "DIAGB") {
+                    diag_B_list = parse_diag_list(value);
+                    continue;
+                }
+            } catch (const std::exception &e) {
+                std::cerr << e.what() << "\n\n";
+                print_options(argv[0]);
+                return 1;
+            }
+
+            std::cerr << "Unknown option: " << arg << "\n\n";
+            print_options(argv[0]);
+            return 1;
         }
 
         if (arg == "accuracy_square") {
@@ -226,11 +499,10 @@ int main(int argc, char **argv) {
                 if (run_Z) bench::accuracy::gemm::check_accuracy<cuDoubleComplex>(deviceName, startTime, transa, transb, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
 
-            for (auto transa : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                for (auto transb : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                    run_gemm_accuracy(transa, transb);
-                }
-            }
+            for_each_gemm_param(
+                trans_A_list,
+                trans_B_list,
+                run_gemm_accuracy);
         }
 
         if (run_SYMM) {
@@ -240,10 +512,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::symm::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::accuracy::symm::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_symm_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_LEFT);
-            run_symm_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_LEFT);
-            run_symm_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_RIGHT);
-            run_symm_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_RIGHT);
+
+            for_each_side_uplo_param(
+                side_list,
+                uplo_list,
+                run_symm_accuracy);
         }
 
         if (run_SYRK) {
@@ -253,10 +526,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::syrk::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::accuracy::syrk::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_syrk_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syrk_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syrk_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syrk_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syrk_accuracy);
         }
 
         if (run_SYR2K) {
@@ -266,10 +540,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::syr2k::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::accuracy::syr2k::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_syr2k_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syr2k_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syr2k_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syr2k_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syr2k_accuracy);
         }
 
         if (run_SYRKX) {
@@ -279,10 +554,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::syrkx::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::accuracy::syrkx::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_syrkx_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syrkx_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syrkx_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syrkx_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syrkx_accuracy);
         }
 
         if (run_HEMM) {
@@ -290,10 +566,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::hemm::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::accuracy::hemm::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_hemm_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_LEFT);
-            run_hemm_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_LEFT);
-            run_hemm_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_RIGHT);
-            run_hemm_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_RIGHT);
+
+            for_each_side_uplo_param(
+                side_list,
+                uplo_list,
+                run_hemm_accuracy);
         }
 
         if (run_HERK) {
@@ -301,10 +578,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::herk::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::accuracy::herk::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_herk_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_herk_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_herk_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_herk_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_herk_accuracy);
         }
 
         if (run_HER2K) {
@@ -312,10 +590,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::her2k::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::accuracy::her2k::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_her2k_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_her2k_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_her2k_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_her2k_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_her2k_accuracy);
         }
 
         if (run_HERKX) {
@@ -323,10 +602,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::herkx::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::accuracy::herkx::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_herkx_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_herkx_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_herkx_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_herkx_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_herkx_accuracy);
         }
 
         if (run_TRMM) {
@@ -338,15 +618,13 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::trmm::check_accuracy<cuFloatComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::accuracy::trmm::check_accuracy<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            for (auto side : {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT}) {
-                for (auto uplo : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        for (auto diag : {CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT}) {
-                            run_trmm_accuracy(side, uplo, trans, diag);
-                        }
-                    }
-                }
-            }
+
+            for_each_tri_param(
+                side_list,
+                uplo_list,
+                trans_list,
+                diag_list,
+                run_trmm_accuracy);
         }
 
         if (run_TRSM) {
@@ -358,35 +636,38 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::trsm::check_accuracy<cuFloatComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, is_square);
                 if (run_Z) bench::accuracy::trsm::check_accuracy<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, is_square);
             };
-            for (auto side : {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT}) {
-                for (auto uplo : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        for (auto diag : {CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT}) {
-                            run_trsm_accuracy(side, uplo, trans, diag, true);
-                        }
-                    }
-                }
-            }
+
+            for_each_tri_param(
+                side_list,
+                uplo_list,
+                trans_list,
+                diag_list,
+                [&](cublasSideMode_t side,
+                    cublasFillMode_t uplo,
+                    cublasOperation_t trans,
+                    cublasDiagType_t diag) {
+                    run_trsm_accuracy(side, uplo, trans, diag, true);
+                });
         }
 
         if (run_TRTRMM) {
-            auto run_trtrmm_accuracy = [&](cublasFillMode_t uplo_A, cublasFillMode_t uplo_B, cublasOperation_t trans_A, cublasOperation_t trans_B) {
+            auto run_trtrmm_accuracy = [&](cublasFillMode_t uplo_A, cublasFillMode_t uplo_B, cublasOperation_t trans_A, cublasOperation_t trans_B, cublasDiagType_t diag_A, cublasDiagType_t diag_B) {
                 if (trans_A != CUBLAS_OP_C && trans_B != CUBLAS_OP_C) {
-                    if (run_S) bench::accuracy::trtrmm::check_accuracy<float>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                    if (run_D) bench::accuracy::trtrmm::check_accuracy<double>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_S) bench::accuracy::trtrmm::check_accuracy<float>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_D) bench::accuracy::trtrmm::check_accuracy<double>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 }
-                if (run_C) bench::accuracy::trtrmm::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                if (run_Z) bench::accuracy::trtrmm::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_C) bench::accuracy::trtrmm::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_Z) bench::accuracy::trtrmm::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            for (auto uplo_A : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                for (auto uplo_B : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans_A : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        for (auto trans_B : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                            run_trtrmm_accuracy(uplo_A, uplo_B, trans_A, trans_B);
-                        }
-                    }
-                }
-            }
+
+            for_each_trtrmm_param(
+                uplo_A_list,
+                uplo_B_list,
+                trans_A_list,
+                trans_B_list,
+                diag_A_list,
+                diag_B_list,
+                run_trtrmm_accuracy);
         }
     }
 
@@ -402,11 +683,10 @@ int main(int argc, char **argv) {
                 if (run_Z) bench::accuracy::gemm::check_accuracy<cuDoubleComplex>(deviceName, startTime, transa, transb, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
 
-            for (auto transa : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                for (auto transb : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                    run_gemm_accuracy(transa, transb);
-                }
-            }
+            for_each_gemm_param(
+                trans_A_list,
+                trans_B_list,
+                run_gemm_accuracy);
         }
 
         if (run_SYMM) {
@@ -416,10 +696,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::symm::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::accuracy::symm::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_symm_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_LEFT);
-            run_symm_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_LEFT);
-            run_symm_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_RIGHT);
-            run_symm_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_RIGHT);
+
+            for_each_side_uplo_param(
+                side_list,
+                uplo_list,
+                run_symm_accuracy);
         }
 
         if (run_SYRK) {
@@ -429,10 +710,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::syrk::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::accuracy::syrk::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_syrk_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syrk_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syrk_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syrk_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syrk_accuracy);
         }
 
         if (run_SYR2K) {
@@ -442,10 +724,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::syr2k::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::accuracy::syr2k::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_syr2k_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syr2k_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syr2k_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syr2k_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syr2k_accuracy);
         }
 
         if (run_SYRKX) {
@@ -455,10 +738,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::syrkx::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::accuracy::syrkx::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_syrkx_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syrkx_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syrkx_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syrkx_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syrkx_accuracy);
         }
 
         if (run_HEMM) {
@@ -466,10 +750,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::hemm::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::accuracy::hemm::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_hemm_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_LEFT);
-            run_hemm_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_LEFT);
-            run_hemm_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_RIGHT);
-            run_hemm_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_RIGHT);
+
+            for_each_side_uplo_param(
+                side_list,
+                uplo_list,
+                run_hemm_accuracy);
         }
 
         if (run_HERK) {
@@ -477,10 +762,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::herk::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::accuracy::herk::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_herk_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_herk_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_herk_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_herk_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_herk_accuracy);
         }
 
         if (run_HER2K) {
@@ -488,10 +774,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::her2k::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::accuracy::her2k::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_her2k_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_her2k_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_her2k_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_her2k_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_her2k_accuracy);
         }
 
         if (run_HERKX) {
@@ -499,10 +786,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::herkx::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::accuracy::herkx::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_herkx_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_herkx_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_herkx_accuracy(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_herkx_accuracy(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_herkx_accuracy);
         }
 
         if (run_TRMM) {
@@ -514,15 +802,13 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::trmm::check_accuracy<cuFloatComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::accuracy::trmm::check_accuracy<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            for (auto side : {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT}) {
-                for (auto uplo : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        for (auto diag : {CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT}) {
-                            run_trmm_accuracy(side, uplo, trans, diag);
-                        }
-                    }
-                }
-            }
+
+            for_each_tri_param(
+                side_list,
+                uplo_list,
+                trans_list,
+                diag_list,
+                run_trmm_accuracy);
         }
 
         if (run_TRSM) {
@@ -534,35 +820,38 @@ int main(int argc, char **argv) {
                 if (run_C) bench::accuracy::trsm::check_accuracy<cuFloatComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, is_square);
                 if (run_Z) bench::accuracy::trsm::check_accuracy<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, is_square);
             };
-            for (auto side : {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT}) {
-                for (auto uplo : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        for (auto diag : {CUBLAS_DIAG_NON_UNIT, CUBLAS_DIAG_UNIT}) {
-                            run_trsm_accuracy(side, uplo, trans, diag, false);
-                        }
-                    }
-                }
-            }
+
+            for_each_tri_param(
+                side_list,
+                uplo_list,
+                trans_list,
+                diag_list,
+                [&](cublasSideMode_t side,
+                    cublasFillMode_t uplo,
+                    cublasOperation_t trans,
+                    cublasDiagType_t diag) {
+                    run_trsm_accuracy(side, uplo, trans, diag, false);
+                });
         }
 
         if (run_TRTRMM) {
-            auto run_trtrmm_accuracy = [&](cublasFillMode_t uplo_A, cublasFillMode_t uplo_B, cublasOperation_t trans_A, cublasOperation_t trans_B) {
+            auto run_trtrmm_accuracy = [&](cublasFillMode_t uplo_A, cublasFillMode_t uplo_B, cublasOperation_t trans_A, cublasOperation_t trans_B, cublasDiagType_t diag_A, cublasDiagType_t diag_B) {
                 if (trans_A != CUBLAS_OP_C && trans_B != CUBLAS_OP_C) {
-                    if (run_S) bench::accuracy::trtrmm::check_accuracy<float>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                    if (run_D) bench::accuracy::trtrmm::check_accuracy<double>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_S) bench::accuracy::trtrmm::check_accuracy<float>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_D) bench::accuracy::trtrmm::check_accuracy<double>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 }
-                if (run_C) bench::accuracy::trtrmm::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                if (run_Z) bench::accuracy::trtrmm::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_C) bench::accuracy::trtrmm::check_accuracy<cuFloatComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_Z) bench::accuracy::trtrmm::check_accuracy<cuDoubleComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            for (auto uplo_A : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                for (auto uplo_B : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans_A : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        for (auto trans_B : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                            run_trtrmm_accuracy(uplo_A, uplo_B, trans_A, trans_B);
-                        }
-                    }
-                }
-            }
+
+            for_each_trtrmm_param(
+                uplo_A_list,
+                uplo_B_list,
+                trans_A_list,
+                trans_B_list,
+                diag_A_list,
+                diag_B_list,
+                run_trtrmm_accuracy);
         }
     }
 
@@ -577,11 +866,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::gemm::check_time<cuFloatComplex>(deviceName, startTime, transa, transb, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::gemm::check_time<cuDoubleComplex>(deviceName, startTime, transa, transb, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            for (auto transa : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                for (auto transb : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                    run_gemm_time(transa, transb);
-                }
-            }
+
+            for_each_gemm_param(
+                trans_A_list,
+                trans_B_list,
+                run_gemm_time);
         }
 
         if (run_SYMM) {
@@ -591,10 +880,12 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::symm::check_time<cuFloatComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::symm::check_time<cuDoubleComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_symm_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_LEFT);
-            run_symm_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_LEFT);
-            run_symm_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_RIGHT);
-            run_symm_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_RIGHT);
+
+            for (auto side : side_list) {
+                for (auto uplo : uplo_list) {
+                    run_symm_time(uplo, side);
+                }
+            }
         }
 
         if (run_SYRK) {
@@ -604,10 +895,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::syrk::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::syrk::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_syrk_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syrk_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syrk_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syrk_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syrk_time);
         }
 
         if (run_SYR2K) {
@@ -617,10 +909,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::syr2k::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::syr2k::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_syr2k_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syr2k_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syr2k_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syr2k_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syr2k_time);
         }
 
         if (run_SYRKX) {
@@ -630,10 +923,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::syrkx::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::syrkx::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_syrkx_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syrkx_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syrkx_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syrkx_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syrkx_time);
         }
 
         if (run_HEMM) {
@@ -641,10 +935,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::hemm::check_time<cuFloatComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::hemm::check_time<cuDoubleComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_hemm_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_LEFT);
-            run_hemm_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_LEFT);
-            run_hemm_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_RIGHT);
-            run_hemm_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_RIGHT);
+
+            for_each_side_uplo_param(
+                side_list,
+                uplo_list,
+                run_hemm_time);
         }
 
         if (run_HERK) {
@@ -652,10 +947,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::herk::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::herk::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_herk_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_herk_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_herk_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_herk_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_herk_time);
         }
 
         if (run_HER2K) {
@@ -663,10 +959,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::her2k::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::her2k::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_her2k_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_her2k_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_her2k_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_her2k_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_her2k_time);
         }
 
         if (run_HERKX) {
@@ -674,28 +971,29 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::herkx::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::herkx::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            run_herkx_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_herkx_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_herkx_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_herkx_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_herkx_time);
         }
 
         if (run_TRMM) {
-            auto run_trmm_time = [&](cublasSideMode_t side, cublasFillMode_t uplo, cublasOperation_t trans) {
+            auto run_trmm_time = [&](cublasSideMode_t side, cublasFillMode_t uplo, cublasOperation_t trans, cublasDiagType_t diag) {
                 if (trans != CUBLAS_OP_C) {
-                    if (run_S) bench::time::trmm::check_time<float>(deviceName, startTime, side, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
-                    if (run_D) bench::time::trmm::check_time<double>(deviceName, startTime, side, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
+                    if (run_S) bench::time::trmm::check_time<float>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
+                    if (run_D) bench::time::trmm::check_time<double>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 }
-                if (run_C) bench::time::trmm::check_time<cuFloatComplex>(deviceName, startTime, side, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
-                if (run_Z) bench::time::trmm::check_time<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
+                if (run_C) bench::time::trmm::check_time<cuFloatComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
+                if (run_Z) bench::time::trmm::check_time<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            for (auto side : {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT}) {
-                for (auto uplo : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        run_trmm_time(side, uplo, trans);
-                    }
-                }
-            }
+
+            for_each_tri_param(
+                side_list,
+                uplo_list,
+                trans_list,
+                diag_list,
+                run_trmm_time);
         }
 
         if (run_TRSM) {
@@ -707,33 +1005,33 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::trsm::check_time<cuFloatComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
                 if (run_Z) bench::time::trsm::check_time<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8, true);
             };
-            for (auto side : {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT}) {
-                for (auto uplo : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        run_trsm_time(side, uplo, trans, CUBLAS_DIAG_NON_UNIT);
-                    }
-                }
-            }
+
+            for_each_tri_param(
+                side_list,
+                uplo_list,
+                trans_list,
+                diag_list,
+                run_trsm_time);
         }
 
         if (run_TRTRMM) {
-            auto run_trtrmm_time = [&](cublasFillMode_t uplo_A, cublasFillMode_t uplo_B, cublasOperation_t trans_A, cublasOperation_t trans_B) {
+            auto run_trtrmm_time = [&](cublasFillMode_t uplo_A, cublasFillMode_t uplo_B, cublasOperation_t trans_A, cublasOperation_t trans_B, cublasDiagType_t diag_A, cublasDiagType_t diag_B) {
                 if (trans_A != CUBLAS_OP_C && trans_B != CUBLAS_OP_C) {
-                    if (run_S) bench::time::trtrmm::check_time<float>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                    if (run_D) bench::time::trtrmm::check_time<double>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_S) bench::time::trtrmm::check_time<float>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_D) bench::time::trtrmm::check_time<double>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 }
-                if (run_C) bench::time::trtrmm::check_time<cuFloatComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                if (run_Z) bench::time::trtrmm::check_time<cuDoubleComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_C) bench::time::trtrmm::check_time<cuFloatComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_Z) bench::time::trtrmm::check_time<cuDoubleComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            for (auto uplo_A : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                for (auto uplo_B : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans_A : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        for (auto trans_B : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                            run_trtrmm_time(uplo_A, uplo_B, trans_A, trans_B);
-                        }
-                    }
-                }
-            }
+
+            for_each_trtrmm_param(
+                uplo_A_list,
+                uplo_B_list,
+                trans_A_list,
+                trans_B_list,
+                diag_A_list,
+                diag_B_list,
+                run_trtrmm_time);
         }
     }
 
@@ -748,11 +1046,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::gemm::check_time<cuFloatComplex>(deviceName, startTime, transa, transb, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::gemm::check_time<cuDoubleComplex>(deviceName, startTime, transa, transb, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            for (auto transa : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                for (auto transb : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                    run_gemm_time(transa, transb);
-                }
-            }
+
+            for_each_gemm_param(
+                trans_A_list,
+                trans_B_list,
+                run_gemm_time);
         }
 
         if (run_SYMM) {
@@ -762,10 +1060,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::symm::check_time<cuFloatComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::symm::check_time<cuDoubleComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_symm_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_LEFT);
-            run_symm_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_LEFT);
-            run_symm_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_RIGHT);
-            run_symm_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_RIGHT);
+
+            for_each_side_uplo_param(
+                side_list,
+                uplo_list,
+                run_symm_time);
         }
 
         if (run_SYRK) {
@@ -775,10 +1074,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::syrk::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::syrk::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_syrk_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syrk_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syrk_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syrk_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syrk_time);
         }
 
         if (run_SYR2K) {
@@ -788,10 +1088,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::syr2k::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::syr2k::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_syr2k_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syr2k_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syr2k_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syr2k_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syr2k_time);
         }
 
         if (run_SYRKX) {
@@ -801,10 +1102,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::syrkx::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::syrkx::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_syrkx_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_syrkx_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_syrkx_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_T);
-            run_syrkx_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_T);
+
+            for_each_syr_param(
+                uplo_list,
+                trans_list,
+                run_syrkx_time);
         }
 
         if (run_HEMM) {
@@ -812,10 +1114,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::hemm::check_time<cuFloatComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::hemm::check_time<cuDoubleComplex>(deviceName, startTime, uplo, side, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_hemm_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_LEFT);
-            run_hemm_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_LEFT);
-            run_hemm_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_SIDE_RIGHT);
-            run_hemm_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_SIDE_RIGHT);
+
+            for_each_side_uplo_param(
+                side_list,
+                uplo_list,
+                run_hemm_time);
         }
 
         if (run_HERK) {
@@ -823,10 +1126,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::herk::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::herk::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_herk_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_herk_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_herk_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_herk_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_herk_time);
         }
 
         if (run_HER2K) {
@@ -834,10 +1138,11 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::her2k::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::her2k::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_her2k_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_her2k_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_her2k_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_her2k_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_her2k_time);
         }
 
         if (run_HERKX) {
@@ -845,28 +1150,29 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::herkx::check_time<cuFloatComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::herkx::check_time<cuDoubleComplex>(deviceName, startTime, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            run_herkx_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_N);
-            run_herkx_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_N);
-            run_herkx_time(CUBLAS_FILL_MODE_UPPER, CUBLAS_OP_C);
-            run_herkx_time(CUBLAS_FILL_MODE_LOWER, CUBLAS_OP_C);
+
+            for_each_her_param(
+                uplo_list,
+                trans_list,
+                run_herkx_time);
         }
 
         if (run_TRMM) {
-            auto run_trmm_time = [&](cublasSideMode_t side, cublasFillMode_t uplo, cublasOperation_t trans) {
+            auto run_trmm_time = [&](cublasSideMode_t side, cublasFillMode_t uplo, cublasOperation_t trans, cublasDiagType_t diag) {
                 if (trans != CUBLAS_OP_C) {
-                    if (run_S) bench::time::trmm::check_time<float>(deviceName, startTime, side, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                    if (run_D) bench::time::trmm::check_time<double>(deviceName, startTime, side, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_S) bench::time::trmm::check_time<float>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_D) bench::time::trmm::check_time<double>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 }
-                if (run_C) bench::time::trmm::check_time<cuFloatComplex>(deviceName, startTime, side, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                if (run_Z) bench::time::trmm::check_time<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_C) bench::time::trmm::check_time<cuFloatComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_Z) bench::time::trmm::check_time<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            for (auto side : {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT}) {
-                for (auto uplo : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        run_trmm_time(side, uplo, trans);
-                    }
-                }
-            }
+
+            for_each_tri_param(
+                side_list,
+                uplo_list,
+                trans_list,
+                diag_list,
+                run_trmm_time);
         }
 
         if (run_TRSM) {
@@ -878,33 +1184,33 @@ int main(int argc, char **argv) {
                 if (run_C) bench::time::trsm::check_time<cuFloatComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 if (run_Z) bench::time::trsm::check_time<cuDoubleComplex>(deviceName, startTime, side, uplo, trans, diag, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            for (auto side : {CUBLAS_SIDE_LEFT, CUBLAS_SIDE_RIGHT}) {
-                for (auto uplo : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        run_trsm_time(side, uplo, trans, CUBLAS_DIAG_NON_UNIT);
-                    }
-                }
-            }
+
+            for_each_tri_param(
+                side_list,
+                uplo_list,
+                trans_list,
+                diag_list,
+                run_trsm_time);
         }
 
         if (run_TRTRMM) {
-            auto run_trtrmm_time = [&](cublasFillMode_t uplo_A, cublasFillMode_t uplo_B, cublasOperation_t trans_A, cublasOperation_t trans_B) {
+            auto run_trtrmm_time = [&](cublasFillMode_t uplo_A, cublasFillMode_t uplo_B, cublasOperation_t trans_A, cublasOperation_t trans_B, cublasDiagType_t diag_A, cublasDiagType_t diag_B) {
                 if (trans_A != CUBLAS_OP_C && trans_B != CUBLAS_OP_C) {
-                    if (run_S) bench::time::trtrmm::check_time<float>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                    if (run_D) bench::time::trtrmm::check_time<double>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_S) bench::time::trtrmm::check_time<float>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                    if (run_D) bench::time::trtrmm::check_time<double>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
                 }
-                if (run_C) bench::time::trtrmm::check_time<cuFloatComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
-                if (run_Z) bench::time::trtrmm::check_time<cuDoubleComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_C) bench::time::trtrmm::check_time<cuFloatComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
+                if (run_Z) bench::time::trtrmm::check_time<cuDoubleComplex>(deviceName, startTime, uplo_A, uplo_B, trans_A, trans_B, diag_A, diag_B, run_Ozaki2_I8, run_Ozaki2_F8, run_Ozaki1_I8);
             };
-            for (auto uplo_A : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                for (auto uplo_B : {CUBLAS_FILL_MODE_UPPER, CUBLAS_FILL_MODE_LOWER}) {
-                    for (auto trans_A : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                        for (auto trans_B : {CUBLAS_OP_N, CUBLAS_OP_T, CUBLAS_OP_C}) {
-                            run_trtrmm_time(uplo_A, uplo_B, trans_A, trans_B);
-                        }
-                    }
-                }
-            }
+
+            for_each_trtrmm_param(
+                uplo_A_list,
+                uplo_B_list,
+                trans_A_list,
+                trans_B_list,
+                diag_A_list,
+                diag_B_list,
+                run_trtrmm_time);
         }
     }
 
@@ -914,7 +1220,7 @@ int main(int argc, char **argv) {
     std::cout << "=========================" << std::endl;
     std::cout << "start        : " << startTime << std::endl;
     std::cout << "end          : " << endTime << std::endl;
-    std::cout << "elapsed time : " << sec << " [sec]" << std::endl;
+    std::cout << "elapsed time : " << sec << " [sec]" << " (" << sec/60.0 << "[min])" << std::endl;
     std::cout << "=========================" << std::endl;
     std::cout << std::endl;
 
