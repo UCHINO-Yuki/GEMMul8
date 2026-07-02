@@ -60,6 +60,10 @@ GEMMul8 supports two low-precision emulation backends:
 - INT8 backend: uses standard BLAS handle (cuBLAS/hipBLAS handle) or Lt handle (cuBLASLt/hipBLASLt handle).
 - FP8 backend: uses Lt handle (cuBLASLt/hipBLASLt handle).
 
+> [!CAUTION]
+>
+> This library does not support FP8-based emulation on Hopper architectures.
+
 ## Supported operations
 
 GEMMul8 currently provides the following BLAS-like operations.
@@ -870,14 +874,16 @@ The following individuals helped conduct preliminary experiments on the B200 env
 ```
 
 ```bibtex
-@misc{uchino2025emulationcomplexmatrixmultiplication,
-    title={Emulation of Complex Matrix Multiplication based on the Chinese Remainder Theorem},
-    author={Yuki Uchino and Qianxiang Ma and Toshiyuki Imamura and Katsuhisa Ozaki and Patrick Lars Gutsche},
-    year={2025},
-    eprint={2512.08321},
-    archivePrefix={arXiv},
-    primaryClass={cs.DC},
-    url={https://arxiv.org/abs/2512.08321},
+@inproceedings{10.23919/ISC.2026.11520500,
+    author={Uchino, Yuki and Ma, Qianxiang and Imamura, Toshiyuki and Ozaki, Katsuhisa and Gutsche, Patrick Lars},
+    booktitle={ISC High Performance 2026 Research Paper Proceedings (41st International Conference)}, 
+    title={Emulation of Complex Matrix Multiplication based on the Chinese Remainder Theorem}, 
+    year={2026},
+    volume={},
+    number={},
+    pages={1-12},
+  url = {https://doi.org/10.23919/ISC.2026.11520500},
+    doi={10.23919/ISC.2026.11520500}
 }
 ```
 
