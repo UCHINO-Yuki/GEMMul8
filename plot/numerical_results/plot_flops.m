@@ -1,50 +1,48 @@
-function plot_flops(type_in,GPU_name)
+function plot_flops(gpu)
 
 arguments (Input)
-    type_in (1,1) string = "d"
-    GPU_name (1,1) string = "RTX5080"
+    gpu (1,1) string = "GB200"
 end
 
 clc;
 
 FontSize = 8;
+type_in = "d";
 
 %% get data
-dir_name_i8  = dir(GPU_name + "/oz2_results_i_" + type_in + "_time*");
-m_i8 = [];
-if ~isempty(dir_name_i8)
-    file_name_i8 = GPU_name + "/" + dir_name_i8.name;
-    data_i8 = detectImportOptions(file_name_i8);
-    data_i8.SelectedVariableNames = 2;
-    m_i8 = readmatrix(file_name_i8,data_i8);
-    data_i8.SelectedVariableNames = 4;
-    k_i8 = readmatrix(file_name_i8,data_i8);
-    data_i8.SelectedVariableNames = 5;
-    func_i8 = readmatrix(file_name_i8,data_i8);
-    data_i8.SelectedVariableNames = 6;
-    tflops_i8 = readmatrix(file_name_i8,data_i8);
-end
+dir_name = dir(gpu + "/oz2_results_" + type_in + "gemm_time*");
+file_name = gpu + "/" + dir_name.name;
+data = detectImportOptions(file_name);
 
-m_f8 = [];
-dir_name_f8  = dir(GPU_name + "/oz2_results_f_" + type_in + "_time*");
-if ~isempty(dir_name_f8)
-    file_name_f8 = GPU_name + "/" + dir_name_f8.name;
-    data_f8 = detectImportOptions(file_name_f8);
-    data_f8.SelectedVariableNames = 2;
-    m_f8 = readmatrix(file_name_f8,data_f8);
-    data_f8.SelectedVariableNames = 4;
-    k_f8 = readmatrix(file_name_f8,data_f8);
-    data_f8.SelectedVariableNames = 5;
-    func_f8 = readmatrix(file_name_f8,data_f8);
-    data_f8.SelectedVariableNames = 6;
-    tflops_f8 = readmatrix(file_name_f8,data_f8);
+idx = find(strcmp(data.VariableNames,"m"));
+data.SelectedVariableNames = idx;
+data_m = readmatrix(file_name,data);
+
+idx = find(strcmp(data.VariableNames,"k"));
+data.SelectedVariableNames = idx;
+data_k = readmatrix(file_name,data);
+
+idx = find(contains(data.VariableNames,"unction"));
+data.SelectedVariableNames = idx;
+data_func = readmatrix(file_name,data);
+
+idx = find(contains(data.VariableNames,"TFLOPS"));
+data.SelectedVariableNames = idx;
+data_tflops = readmatrix(file_name,data);
+
+if contains(gpu,"RTX")
+    idx = data_m < 16384;
+    data_m = data_m(idx);
+    data_k = data_k(idx);
+    data_func = data_func(idx);
+    data_tflops = data_tflops(idx);
 end
 
 %% plot
 size_list = [1024 2048 4096 8192 16384 32768];
-fig = figure('Position',[50,50,550,380]);
+fig = figure('Position',[50,50,550,450]);
 for i=length(size_list):-1:1
-    if size_list(i)>min(max(m_i8),max(m_f8))
+    if size_list(i)>max(data_m(contains(data_func,"OS2-i8-fast-15")))
         size_list(i)=[];
     end
 end
@@ -62,78 +60,86 @@ for tid = 1:length(size_list)
     nexttile; hold on; grid on;
     xlims = [];
 
-    if ~isempty(dir_name_i8)
-        idx = contains(func_i8,"DGEMM") & m_i8 == m;
-        if any(idx)
-            tflops = tflops_i8(idx);
-            k = k_i8(idx);
-            plot(1:length(k),tflops,mark(1,2,1),'DisplayName',"native FP64 DGEMM", 'MarkerSize',5, 'LineWidth',1);
-            tflops_DGEMM = tflops;
-        end
-
-        idx = contains(func_i8,"Oz1-7") & m_i8 == m;
-        if any(idx)
-            tflops = tflops_i8(idx);
-            k = k_i8(idx);
-            plot(1:length(k),tflops,mark(1,1,2),'DisplayName',"INT8-based Ozaki-I (7 slices)", 'MarkerSize',5, 'LineWidth',1);
-            tflops_i8fast = tflops;
-        end
-
-        idx = contains(func_i8,"fast-16") & m_i8 == m;
-        if any(idx)
-            tflops = tflops_i8(idx);
-            k = k_i8(idx);
-            plot(1:length(k),tflops,mark(1,3,3),'DisplayName',"INT8-based Ozaki-II fast (16 moduli)", 'MarkerSize',5, 'LineWidth',1);
-            tflops_i8fast = tflops;
-        end
-
-        idx = contains(func_i8,"accu-15") & m_i8 == m;
-        if any(idx)
-            tflops = tflops_i8(idx);
-            k = k_i8(idx);
-            plot(1:length(k),tflops,mark(1,4,4),'DisplayName',"INT8-based Ozaki-II accu. (15 moduli)", 'MarkerSize',5, 'LineWidth',1);
-            tflops_i8accu = tflops;
-        end
-
-        xlims = k;
-
-        if m==16384
-            tflops_i8fast(k==16384),tflops_i8accu(k==16384)
-        end
-        m
-        i8_dgemm = [tflops_i8fast,tflops_i8accu]./tflops_DGEMM
-        [i8_dgemm_min,i8_dgemm_max] = bounds(i8_dgemm,'all')
+    idx = strcmp(data_func, "DGEMM") & data_m == m;
+    if any(idx)
+        tflops = data_tflops(idx);
+        k = data_k(idx);
+        plot(1:length(k),tflops,mark(3,1,1),'DisplayName',"native FP64 DGEMM", 'MarkerSize',5, 'LineWidth',1);
+        tflops_DGEMM = tflops;
     end
 
-    if ~isempty(dir_name_f8)
-        idx = contains(func_f8,"fast-13") & m_f8 == m;
-        if any(idx)
-            tflops = tflops_f8(idx);
-            k = k_f8(idx);
-            plot(1:length(k),tflops,mark(1,5,5),'DisplayName',"FP8-based Ozaki-II fast (13 moduli)", 'MarkerSize',5, 'LineWidth',1);
-            tflops_f8fast = tflops;
-        end
-
-        idx = contains(func_f8,"accu-12") & m_f8 == m;
-        if any(idx)
-            tflops = tflops_f8(idx);
-            k = k_f8(idx);
-            plot(1:length(k),tflops,mark(1,7,6),'DisplayName',"FP8-based Ozaki-II accu. (12 moduli)", 'MarkerSize',5, 'LineWidth',1);
-            tflops_f8accu = tflops;
-        end
-
-        f8_dgemm = [tflops_f8fast,tflops_f8accu]./tflops_DGEMM(1:length(k))
-        [f8_dgemm_min,f8_dgemm_max] = bounds(f8_dgemm,'all')
-
-        i8_f8 = [tflops_i8fast(1:length(k)),tflops_i8accu(1:length(k)),tflops_i8accu(1:length(k)),tflops_i8fast(1:length(k))]...
-            ./[tflops_f8fast,tflops_f8accu,tflops_f8fast,tflops_f8accu];
-        [i8_f8_min,i8_f8_max] = bounds(i8_f8,'all')
-        i8_f8_ratio(1) = min(i8_f8_ratio(1),i8_f8_min);
-        i8_f8_ratio(2) = max(i8_f8_ratio(2),i8_f8_max);
-
-        xlims_max(1) = min(xlims_max(1), min(k));
-        xlims_max(2) = max(xlims_max(2), max(k));
+    idx = strcmp(data_func, "OS1-7") & data_m == m;
+    if any(idx)
+        tflops = data_tflops(idx);
+        k = data_k(idx);
+        plot(1:length(k),tflops,mark(1,1,2),'DisplayName',"INT8 Ozaki-I (7 slices)", 'MarkerSize',5, 'LineWidth',1);
+        tflops_i8oz1 = tflops;
     end
+
+    idx = strcmp(data_func, "OS1-11") & data_m == m;
+    if any(idx)
+        tflops = data_tflops(idx);
+        k = data_k(idx);
+        plot(1:length(k),tflops,mark(2,1,2),'DisplayName',"INT8 Ozaki-I (11 slices)", 'MarkerSize',5, 'LineWidth',1);
+        tflops_f8oz1 = tflops;
+    end
+
+    idx = strcmp(data_func, "OS2-i8-fast-15") & data_m == m;
+    if any(idx)
+        tflops = data_tflops(idx);
+        k = data_k(idx);
+        plot(1:length(k),tflops,mark(1,3,3),'DisplayName',"INT8 Ozaki-II fast (15 moduli)", 'MarkerSize',5, 'LineWidth',1);
+        tflops_i8fast = tflops;
+    end
+
+    idx = strcmp(data_func, "OS2-i8-accu-15") & data_m == m;
+    if any(idx)
+        tflops = data_tflops(idx);
+        k = data_k(idx);
+        plot(1:length(k),tflops,mark(1,4,4),'DisplayName',"INT8 Ozaki-II accu. (15 moduli)", 'MarkerSize',5, 'LineWidth',1);
+        tflops_i8accu = tflops;
+    end
+
+    xlims = k;
+
+    if m==16384
+        tflops_i8fast(k==16384),tflops_i8accu(k==16384)
+    end
+    m
+    i8_dgemm = [tflops_i8fast,tflops_i8accu]./tflops_DGEMM(1:length(k))
+    [i8_dgemm_min,i8_dgemm_max] = bounds(i8_dgemm,'all')
+
+    idx = strcmp(data_func, "OS2-f8-fast-12") & data_m == m;
+    if any(idx)
+        tflops = data_tflops(idx);
+        k = data_k(idx);
+        plot(1:length(k),tflops,mark(2,3,5),'DisplayName',"FP8 Ozaki-II fast (12 moduli)", 'MarkerSize',5, 'LineWidth',1);
+        tflops_f8fast = tflops;
+    end
+
+    idx = strcmp(data_func, "OS2-f8-accu-12") & data_m == m;
+    if any(idx)
+        tflops = data_tflops(idx);
+        k = data_k(idx);
+        plot(1:length(k),tflops,mark(2,4,6),'DisplayName',"FP8 Ozaki-II accu. (12 moduli)", 'MarkerSize',5, 'LineWidth',1);
+        tflops_f8accu = tflops;
+    end
+
+    f8_dgemm = [tflops_f8fast,tflops_f8accu]./tflops_DGEMM(1:length(k))
+    [f8_dgemm_min,f8_dgemm_max] = bounds(f8_dgemm,'all')
+
+    if m==16384
+        tflops_f8fast(k==16384),tflops_f8accu(k==16384)
+    end
+
+    i8_f8 = [tflops_i8fast(1:length(k)),tflops_i8accu(1:length(k)),tflops_i8accu(1:length(k)),tflops_i8fast(1:length(k))]...
+        ./[tflops_f8fast,tflops_f8accu,tflops_f8fast,tflops_f8accu];
+    [i8_f8_min,i8_f8_max] = bounds(i8_f8,'all')
+    i8_f8_ratio(1) = min(i8_f8_ratio(1),i8_f8_min);
+    i8_f8_ratio(2) = max(i8_f8_ratio(2),i8_f8_max);
+
+    xlims_max(1) = min(xlims_max(1), min(k));
+    xlims_max(2) = max(xlims_max(2), max(k));
 
     title("{\itm=n=" + m +"=2^{" + log2(m) + "}}");
     set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
@@ -148,11 +154,14 @@ for tid = 1:length(size_list)
     xtickangle(0)
 end
 
-inc = ceil((yl(2)-yl(1))/45)*5
+inc = ceil((yl(2)-yl(1))/45)*5;
+if (yl(2)-yl(1)) >= 160
+    inc = 20;
+end
 for tid = 1:length(size_list)
     nexttile(tid);
     ylim(yl);
-    yticks(0:inc:200);
+    yticks(0:inc:300);
 end
 
 i8_f8_ratio
@@ -162,10 +171,18 @@ lgd = legend('Interpreter','tex','FontName','Yu Gothic UI Semibold','IconColumnW
 lgd.Layout.Tile = 'north';
 t.TileSpacing = "tight";
 t.Padding = "compact";
-xlabel(t,"\itk");
-ylabel(t,"TFLOP/s");
+xlabel(t,"\itk", 'Interpreter', 'tex','FontName','Yu Gothic UI Semibold');
+ylabel(t,'TFLOP/s','FontName','Yu Gothic UI Semibold');
 set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
 
-savefig(fig,GPU_name+"/"+GPU_name+"_flops_"+type_in);
-exportgraphics(fig,GPU_name+"/"+GPU_name+"_flops_"+type_in+".png",'Resolution',600);
+savefig(fig,gpu+"/"+gpu+"_flops_"+type_in);
+exportgraphics(fig,gpu+"/"+gpu+"_flops_"+type_in+".png",'Resolution',600);
+end
+
+%%
+function m = mark(i,j,k)
+lines = {"-",":","--",""};
+markers = {"", "o", "x", "d", "p", "+", ".", "s", "h", "^", "v", ">", "<"};
+colors = {"k", "c", "r", "b", "g", "m"};
+m = lines{i} + markers{j} + colors(k);
 end

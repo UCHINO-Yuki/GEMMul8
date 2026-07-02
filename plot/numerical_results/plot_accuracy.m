@@ -1,50 +1,36 @@
-function plot_accuracy(type_in,GPU_name)
+function plot_accuracy(gpu)
 
 arguments (Input)
-    type_in (1,1) string = "d"
-    GPU_name (1,1) string = "RTX4090Laptop"
+    gpu (1,1) string = "RTX4090Laptop"
 end
 
 FontSize = 8;
+type_in = "d";
 
 %% get data
-dir_name_i8  = dir(GPU_name + "/oz2_results_i_" + type_in + "_accuracy*");
-if ~isempty(dir_name_i8)
-    file_name_i8 = GPU_name + "/" + dir_name_i8.name;
-    data_i8 = detectImportOptions(file_name_i8);
-    data_i8.SelectedVariableNames = 1;
-    phi_i8 = readmatrix(file_name_i8,data_i8);
-    phi_i8 = phi_i8(2:end,:);
-    data_i8.SelectedVariableNames = 2;
-    k_i8 = readmatrix(file_name_i8,data_i8);
-    k_i8 = k_i8(2:end,:);
-    data_i8.SelectedVariableNames = 3;
-    func_i8 = readmatrix(file_name_i8,data_i8);
-    func_i8 = func_i8(2:end,:);
-    data_i8.SelectedVariableNames = 4:length(data_i8.VariableNames);
-    err_i8 = readmatrix(file_name_i8,data_i8);
-    moduli_i8 = err_i8(1,:);
-    err_i8 = err_i8(2:end,:);
-end
+dir_name = dir(gpu + "/oz2_results_" + type_in + "gemm_accuracy*");
+file_name = gpu + "/" + dir_name.name;
+data = detectImportOptions(file_name);
 
-dir_name_f8  = dir(GPU_name + "/oz2_results_f_" + type_in + "_accuracy*");
-if ~isempty(dir_name_f8)
-    file_name_f8 = GPU_name + "/" + dir_name_f8.name;
-    data_f8 = detectImportOptions(file_name_f8);
-    data_f8.SelectedVariableNames = 1;
-    phi_f8 = readmatrix(file_name_f8,data_f8);
-    phi_f8 = phi_f8(2:end,:);
-    data_f8.SelectedVariableNames = 2;
-    k_f8 = readmatrix(file_name_f8,data_f8);
-    k_f8 = k_f8(2:end,:);
-    data_f8.SelectedVariableNames = 3;
-    func_f8 = readmatrix(file_name_f8,data_f8);
-    func_f8 = func_f8(2:end,:);
-    data_f8.SelectedVariableNames = 4:length(data_f8.VariableNames);
-    err_f8 = readmatrix(file_name_f8,data_f8);
-    moduli_f8 = err_f8(1,:);
-    err_f8 = err_f8(2:end,:);
-end
+idx = 1;
+data.SelectedVariableNames = idx;
+data_phi = readmatrix(file_name,data);
+data_phi = data_phi(2:end,:);
+
+idx = 4;
+data.SelectedVariableNames = idx;
+data_k = readmatrix(file_name,data);
+data_k = data_k(2:end,:);
+
+idx = 5;
+data.SelectedVariableNames = idx;
+data_func = readmatrix(file_name,data);
+data_func = data_func(2:end,:);
+
+data.SelectedVariableNames = idx+1:length(data.VariableNames);
+data_err = readmatrix(file_name,data);
+data_moduli = data_err(1,:);
+data_err = data_err(2:end,:);
 
 %% plot
 yl_min = inf;
@@ -55,41 +41,34 @@ t = tiledlayout(1,4);
 for tid = 1:4
     nexttile; hold on; grid on;
 
-    for k = [1024, max(k_i8)]
-        if ~isempty(dir_name_i8)
-    
-            idx = contains(func_i8,"DGEMM") & k_i8 == k & phi_i8 == phi(tid);
-            err = err_i8(idx,:);
-            plot(moduli_i8, err, mark(1,2-(k==1024),1), 'DisplayName', "native FP64 DGEMM {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
-    
-            idx = contains(func_i8,"OS1-7") & k_i8 == k & phi_i8 == phi(tid);
-            err = err_i8(idx,:);
-            plot(moduli_i8, err, mark(1,2-(k==1024),2), 'DisplayName', "INT8-based Ozaki-I (7 slices) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
-    
-            idx = contains(func_i8,"OS2-fast") & k_i8 == k & phi_i8 == phi(tid);
-            err = err_i8(idx,:);
-            plot(moduli_i8, err, mark(1,2-(k==1024),3), 'DisplayName', "INT8-based Ozaki-II (fast) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
-    
-            idx = contains(func_i8,"OS2-accu") & k_i8 == k & phi_i8 == phi(tid);
-            err = err_i8(idx,:);
-            plot(moduli_i8, err, mark(1,2-(k==1024),4), 'DisplayName', "INT8-based Ozaki-II (acc.) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
-    
-            xlim([min(moduli_i8), max(moduli_i8)]);
-            xticks(moduli_i8);
-        end
-    
-        if ~isempty(dir_name_f8)
-            idx = contains(func_f8,"OS2-fast") & k_f8 == k & phi_f8 == phi(tid);
-            err = err_f8(idx,:);
-            plot(moduli_f8, err, mark(1,2-(k==1024),5), 'DisplayName', "FP8-based Ozaki-II (fast) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
-    
-            idx = contains(func_f8,"OS2-accu") & k_f8 == k & phi_f8 == phi(tid);
-            err = err_f8(idx,:);
-            plot(moduli_f8, err, mark(1,2-(k==1024),6), 'DisplayName', "FP8-based Ozaki-II (acc.) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
-    
-            xlim([min(moduli_f8), max(moduli_f8)]);
-            xticks(moduli_f8);
-        end
+    for k = [1024, max(data_k)]
+
+        idx = contains(data_func,"DGEMM") & data_k == k & data_phi == phi(tid);
+        err = data_err(idx,:);
+        plot(data_moduli, err, mark(3-2*(k==1024),1,1), 'DisplayName', "native FP64 DGEMM {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
+
+        idx = contains(data_func,"OS1-7") & data_k == k & data_phi == phi(tid);
+        err = data_err(idx,:);
+        plot(data_moduli, err, mark(3-2*(k==1024),1,2), 'DisplayName', "INT8-based Ozaki-I (7 slices) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
+
+        idx = contains(data_func,"OS2-i8-fast") & data_k == k & data_phi == phi(tid);
+        err = data_err(idx,:);
+        plot(data_moduli, err, mark(3-2*(k==1024),1,3), 'DisplayName', "INT8 Ozaki-II (fast) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
+
+        idx = contains(data_func,"OS2-i8-accu") & data_k == k & data_phi == phi(tid);
+        err = data_err(idx,:);
+        plot(data_moduli, err, mark(3-2*(k==1024),1,4), 'DisplayName', "INT8 Ozaki-II (acc.) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
+
+        idx = contains(data_func,"OS2-f8-fast") & data_k == k & data_phi == phi(tid);
+        err = data_err(idx,:);
+        plot(data_moduli, err, mark(3-2*(k==1024),1,5), 'DisplayName', "FP8 Ozaki-II (fast) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
+
+        idx = contains(data_func,"OS2-f8-accu") & data_k == k & data_phi == phi(tid);
+        err = data_err(idx,:);
+        plot(data_moduli, err, mark(3-2*(k==1024),1,6), 'DisplayName', "FP8 Ozaki-II (acc.) {\itk=" + k +"}", 'MarkerSize',5, 'LineWidth',1);
+
+        xlim([min(data_moduli), max(data_moduli)]);
+        xticks(data_moduli);
     end
 
     if phi(tid)<0
@@ -117,10 +96,18 @@ lgd = legend('Interpreter','tex','FontName','Yu Gothic UI Semibold','IconColumnW
 lgd.Layout.Tile = 'north';
 t.TileSpacing = "tight";
 t.Padding = "compact";
-xlabel(t,"Number of moduli");
-ylabel(t,"Max. relative error");
+xlabel(t,"Number of moduli",'FontName','Yu Gothic UI Semibold');
+ylabel(t,"Max. relative error",'FontName','Yu Gothic UI Semibold');
 set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
 
-savefig(fig,GPU_name+"/"+GPU_name+"_accuracy_"+type_in);
-exportgraphics(fig,GPU_name+"/"+GPU_name+"_accuracy_"+type_in+".png",'Resolution',600);
+savefig(fig,gpu+"/"+gpu+"_accuracy_"+type_in);
+exportgraphics(fig,gpu+"/"+gpu+"_accuracy_"+type_in+".png",'Resolution',600);
+end
+
+%%
+function m = mark(i,j,k)
+lines = {"-",":","--",""};
+markers = {"", "o", "x", "d", "p", "+", ".", "s", "h", "^", "v", ">", "<"};
+colors = {"k", "c", "r", "b", "g", "m"};
+m = lines{i} + markers{j} + colors(k);
 end
