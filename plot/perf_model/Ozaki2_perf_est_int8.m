@@ -42,12 +42,12 @@ arguments (Input)
     m        (1,1) double  {mustBePositive,mustBeFinite}              = 16384
     n        (1,1) double  {mustBePositive,mustBeFinite}              = 16384
     k        (1,1) double  {mustBePositive,mustBeFinite}              = 16384
-    numMod   (1,1) double  {mustBePositive,mustBeFinite}              = 14
+    numMod   (1,1) double  {mustBePositive,mustBeFinite}              = 15
     fastmode (1,1) logical                                            = false
-    correct  (1,1) double  {mustBeNonnegative}                        = 2*numMod
-    TOPs     (:,1) double  {mustBeVector,mustBePositive,mustBeFinite} = 1000:1000:10000
-    TBs      (1,:) double  {mustBeVector,mustBePositive,mustBeFinite} = 1:1:10
-    saveflag (1,1) logical                                            = false
+    correct  (1,1) double  {mustBeNonnegative}                        = 16
+    TOPs     (:,1) double  {mustBeVector,mustBePositive,mustBeFinite} = 1000:2000:17000
+    TBs      (1,:) double  {mustBeVector,mustBePositive,mustBeFinite} = 2:4:22
+    saveflag (1,1) logical                                            = true
     savedir  (1,1) string                                             = ""
 end
 
