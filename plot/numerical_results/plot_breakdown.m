@@ -4,8 +4,6 @@ arguments (Input)
     gpu (1,1) string = "RTX5080"
 end
 
-clc;
-
 FontSize = 8;
 type_in = "d";
 

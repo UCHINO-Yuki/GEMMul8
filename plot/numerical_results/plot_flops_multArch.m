@@ -1,22 +1,52 @@
-function plot_flops_multArch
+function plot_flops_multArch(varargin)
 
-close all
-clc
+defaultGPUs = ["RTX4090Laptop" ...
+               "RTX5080" ...
+               "RX9070XT" ...
+               "GB10" ...
+               "GB200"];
+defaultGPUNAME = ["NVIDIA RTX 4090 Laptop" ...
+                  "NVIDIA RTX 5080" ...
+                  "AMD RX 9070 XT" ...
+                  "NVIDIA GB10" ...
+                  "NVIDIA GB200 NVL4"];
 
-GPUs = ["RTX4090Laptop" "RTX5080" "RX9070XT" "GB10" "GB200"];
-GPUNAME = ["NVIDIA RTX 4090 Laptop" "NVIDIA RTX 5080" "AMD RX 9070 XT" "NVIDIA GB10" "NVIDIA GB200 NVL4"];
+p = inputParser;
+addParameter(p, 'GPUs', defaultGPUs);
+addParameter(p, 'GPUNAME', defaultGPUNAME);
+parse(p, varargin{:});
+
+GPUs = string(p.Results.GPUs);
+GPUNAME = string(p.Results.GPUNAME);
+
+assert(numel(GPUs) >= 1, "GPUs must contain at least one GPU.");
+assert(numel(GPUs) == numel(GPUNAME), "GPUs and GPUNAME must have the same number of elements.");
+
+nGPU = numel(GPUs);
+nCol = min(3, nGPU+1);
+nRow = ceil(nGPU / nCol);
+legendNorth = mod(nGPU, 3) == 0;
+
+WIDTH = 550;
+if nCol == 2
+    WIDTH = 400;
+end
+
+HEIGHT = 180 * nRow + 40;
+if legendNorth
+    HEIGHT = HEIGHT + 50;
+end
+
 SIZE = [1024 2048 4096 8192 16384 32768];
-
 FontSize = 8;
 LINEWIDTH = 1.2;
 MARKERSIZE = 6;
 
-fig = figure('Position',[50,50,550,400]);
-tile = tiledlayout(2,3);
-yl = cell(3,1);
-yl{1} = [inf,0]; yl{2}=yl{1}; yl{3}=yl{1};
+fig = figure('Position', [50, 70, WIDTH, HEIGHT]);
+tile = tiledlayout(nRow, nCol);
 
-for gpu = GPUs
+for i = 1:length(GPUs)
+    gpu = GPUs(i);
 
     dir_name = dir(gpu + "/oz2_results_dgemm_time_*");
     file_name = gpu + "/" + dir_name.name;
@@ -107,21 +137,17 @@ for gpu = GPUs
     xticklabels("2^{" + log2(SIZE) + "}");
     xtickangle(0)
     ylim('padded');
-    yl_tmp = ylim;
-    yl{ceil(find(gpu==GPUs)/2)}(1) = min(yl{ceil(find(gpu==GPUs)/2)}(1), yl_tmp(1));
-    yl{ceil(find(gpu==GPUs)/2)}(2) = max(yl{ceil(find(gpu==GPUs)/2)}(2), yl_tmp(2));
-
 
     grid on;
     set(gca,'FontName','Yu Gothic UI Semibold');
-    title(GPUNAME(gpu==GPUs));
+    title(GPUNAME(i));
     set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
 
 end
 
-for gpu = GPUs
-    nexttile(find(gpu == GPUs));
-    yl_tmp = ylim;%yl{ceil(find(gpu==GPUs)/2)};
+for i = 1:length(GPUs)
+    nexttile(i);
+    yl_tmp = ylim;
     ylmax = ceil(yl_tmp(2)/10);
     inc = ylmax;
     if inc>1
@@ -130,13 +156,20 @@ for gpu = GPUs
     if inc>10
         inc = ceil(inc/10)*10;
     end
-    % inc = ceil((yl_tmp(2)-yl_tmp(1))/45)*5;
     ylim([0 yl_tmp(2)]);
     yticks(0:inc:200);
 end
 
-lgd = legend('Interpreter','tex','FontName','Yu Gothic UI Semibold','IconColumnWidth',15,'NumColumns',1);
-lgd.Layout.Tile = 6;
+lgd = legend('Interpreter','tex', ...
+             'FontName','Yu Gothic UI Semibold', ...
+             'IconColumnWidth',15, ...
+             'NumColumns',1);
+if legendNorth
+    lgd.Layout.Tile = 'north';
+    lgd.NumColumns = 2;
+else
+    lgd.Layout.Tile = nGPU + 1;
+end
 xlabel(tile,'\itm = n = k', 'Interpreter', 'tex','FontName','Yu Gothic UI Semibold');
 ylabel(tile,'TFLOP/s','FontName','Yu Gothic UI Semibold');
 set(gca,'FontSize',FontSize,'FontName','Yu Gothic UI Semibold');
