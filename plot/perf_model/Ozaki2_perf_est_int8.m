@@ -43,8 +43,8 @@ arguments (Input)
     n        (1,1) double  {mustBePositive,mustBeFinite}              = 16384
     k        (1,1) double  {mustBePositive,mustBeFinite}              = 16384
     numMod   (1,1) double  {mustBePositive,mustBeFinite}              = 15
-    fastmode (1,1) logical                                            = false
-    correct  (1,1) double  {mustBeNonnegative}                        = 16
+    fastmode (1,1) logical                                            = true
+    correct  (1,1) double  {mustBeNonnegative}                        = 15
     TOPs     (:,1) double  {mustBeVector,mustBePositive,mustBeFinite} = 1000:2000:17000
     TBs      (1,:) double  {mustBeVector,mustBePositive,mustBeFinite} = 2:4:22
     saveflag (1,1) logical                                            = true
